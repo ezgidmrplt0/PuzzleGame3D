@@ -10,7 +10,7 @@ public class SwipeInput : MonoBehaviour
     [SerializeField] private float minSwipeDistance = 50f;
     [SerializeField] private float tapThreshold = 0.2f; // Seconds
     [SerializeField] private float maxTapMovement = 20f; // Pixels
-    
+
     private Vector2 startPos;
     private float startTime;
     private bool isTouching;

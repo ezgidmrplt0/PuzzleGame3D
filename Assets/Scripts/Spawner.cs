@@ -5,8 +5,8 @@ using UnityEngine;
 
 public class Spawner : MonoBehaviour
 {
-    // ✅ SlotManager bunu dinler (spawn edilen gerçek objeyi verir)
     public static event Action<FallingPiece> OnPieceSpawned;
+    public static event Action OnBagEmpty;
 
     [Header("Piece Prefabs (tip tespiti için şart)")]
     [SerializeField] private GameObject cubePrefab;
@@ -14,9 +14,6 @@ public class Spawner : MonoBehaviour
 
     [Header("Spawn Point")]
     [SerializeField] private Transform spawnPoint;
-
-    [Header("Destroy Zone (Is Trigger = true)")]
-    [SerializeField] private Collider destroyZone;
 
     [Header("Level Configs (0 = Level 1)")]
     [SerializeField] private List<LevelConfig> levels = new List<LevelConfig>();
@@ -26,36 +23,29 @@ public class Spawner : MonoBehaviour
     [SerializeField] private int currentLevel = 1;
 
     [Header("Spawn Timing")]
-    [SerializeField] private bool spawnOnStart = true;
-    [SerializeField] private float spawnInterval = 0.35f;
+    [SerializeField] private bool spawnOnStart = false;   // ✅ LevelManager varken FALSE
     [SerializeField] private bool shuffleOrder = true;
 
-    [Header("Random Spawn Offset")]
-    [SerializeField] private float randomX = 0.2f;
-    [SerializeField] private float randomY = 0.2f;
-    [SerializeField] private float randomZ = 0.6f;
+    // ===== Level Bag Runtime =====
+    private readonly List<GameObject> bag = new List<GameObject>();
+    private int bagIndex = 0;
 
-    [Header("No Overlap Settings")]
-    [SerializeField] private float noOverlapRadius = 0.6f;
-    [SerializeField] private int maxSpawnTries = 25;
-    [SerializeField] private LayerMask overlapMask = ~0;
-
-    [Header("Push Force (+X Direction)")]
-    [SerializeField] private float forwardForceMin = 6f;
-    [SerializeField] private float forwardForceMax = 10f;
-    [SerializeField] private float sideForceZ = 1.5f;
-    [SerializeField] private float upForce = 0f;
-
-    [Header("Rigidbody Defaults")]
-    [SerializeField] private bool useGravity = true;
-    [SerializeField] private float drag = 0f;
-    [SerializeField] private float angularDrag = 0.05f;
-
-    private Coroutine spawnRoutine;
+    // ===== Center Lock (üst üste spawn fix) =====
+    private FallingPiece currentCenterPiece;
 
     [Serializable]
     public class LevelConfig
     {
+        [Header("Goal")]
+        public int targetMatches = 3;
+
+        [Header("Limits")]
+        public int timeLimitSeconds = 45;
+
+        [Header("Difficulty")]
+        [Range(0, 100)] public float fakeChance = 20f;
+
+        [Header("Bag Content")]
         public List<SpawnEntry> spawns = new List<SpawnEntry>();
     }
 
@@ -69,20 +59,47 @@ public class Spawner : MonoBehaviour
     private void Start()
     {
         if (spawnOnStart)
-            SpawnForLevel(1);
+            StartLevel(1);
     }
 
-    public void SpawnForLevel(int level)
+    public LevelConfig GetLevelConfig(int level)
+    {
+        if (levels == null || levels.Count == 0) return null;
+        int idx = Mathf.Clamp(level - 1, 0, levels.Count - 1);
+        return levels[idx];
+    }
+
+    public void StartLevel(int level)
     {
         currentLevel = Mathf.Max(1, level);
-        SpawnNextPiece(); // Start with one piece
+
+        // level başında merkez boş
+        currentCenterPiece = null;
+
+        BuildBagForLevel(currentLevel);
+        SpawnNextPiece();
     }
 
-    [Header("Difficulty")]
-    [Range(0, 100)]
-    [SerializeField] private float fakeChance = 20f; // Percent
+    private void BuildBagForLevel(int level)
+    {
+        bag.Clear();
+        bagIndex = 0;
 
-    // Called externally (e.g. by SlotManager) when ready for next
+        var cfg = GetLevelConfig(level);
+        if (cfg == null || cfg.spawns == null) return;
+
+        foreach (var entry in cfg.spawns)
+        {
+            if (entry == null || entry.prefab == null) continue;
+            int c = Mathf.Max(0, entry.count);
+            for (int i = 0; i < c; i++)
+                bag.Add(entry.prefab);
+        }
+
+        if (shuffleOrder)
+            Shuffle(bag);
+    }
+
     public void SpawnNextPiece()
     {
         StartCoroutine(SpawnSinglePieceRoutine());
@@ -90,59 +107,52 @@ public class Spawner : MonoBehaviour
 
     private IEnumerator SpawnSinglePieceRoutine()
     {
-        // Optional delay before new piece appears
         yield return new WaitForSeconds(0.2f);
 
         if (spawnPoint == null) yield break;
-        if (levels == null || levels.Count == 0) yield break;
 
-        // Simple random selection for now (or sequential from level config)
-        // For prototype: Just pick random prefab from level 1
-        var levelConfig = levels[0]; 
-        var randomSpawn = levelConfig.spawns[UnityEngine.Random.Range(0, levelConfig.spawns.Count)];
-        GameObject prefab = randomSpawn.prefab;
+        // ✅ center doluysa spawn etme
+        if (currentCenterPiece != null)
+            yield break;
+
+        // bag bitti
+        if (bagIndex >= bag.Count)
+        {
+            OnBagEmpty?.Invoke();
+            yield break;
+        }
+
+        var cfg = GetLevelConfig(currentLevel);
+        if (cfg == null) yield break;
+
+        GameObject prefab = bag[bagIndex];
+        bagIndex++;
 
         GameObject go = Instantiate(prefab, spawnPoint.position, Quaternion.identity);
 
-        // Rigidbody Setup: Suspend in air
         Rigidbody rb = go.GetComponent<Rigidbody>();
         if (!rb) rb = go.AddComponent<Rigidbody>();
-        rb.useGravity = false; // Don't fall
-        rb.isKinematic = true; // Don't move by physics
+        rb.useGravity = false;
+        rb.isKinematic = true;
 
-        // FallingPiece Setup
         FallingPiece fp = go.GetComponent<FallingPiece>();
         if (!fp) fp = go.AddComponent<FallingPiece>();
         fp.pieceType = (prefab == spherePrefab) ? FallingPiece.Type.Sphere : FallingPiece.Type.Cube;
 
-        // FAKE LOGIC
-        bool isFake = UnityEngine.Random.value * 100f < fakeChance;
+        bool isFake = UnityEngine.Random.value * 100f < cfg.fakeChance;
         fp.SetFake(isFake);
 
-        // Notify System
+        // ✅ center lock set
+        currentCenterPiece = fp;
+
         OnPieceSpawned?.Invoke(fp);
     }
 
-    private bool TryGetSpawnPosition(out Vector3 pos)
+    // ✅ SlotManager, merkez boşaldığında çağırır
+    public void NotifyCenterCleared(FallingPiece piece)
     {
-        for (int t = 0; t < maxSpawnTries; t++)
-        {
-            Vector3 p = spawnPoint.position + new Vector3(
-                UnityEngine.Random.Range(-randomX, randomX),
-                UnityEngine.Random.Range(-randomY, randomY),
-                UnityEngine.Random.Range(-randomZ, randomZ)
-            );
-
-            bool blocked = Physics.CheckSphere(p, noOverlapRadius, overlapMask, QueryTriggerInteraction.Ignore);
-            if (!blocked)
-            {
-                pos = p;
-                return true;
-            }
-        }
-
-        pos = default;
-        return false;
+        if (currentCenterPiece == piece)
+            currentCenterPiece = null;
     }
 
     private void Shuffle<T>(List<T> list)
@@ -152,23 +162,5 @@ public class Spawner : MonoBehaviour
             int j = UnityEngine.Random.Range(0, i + 1);
             (list[i], list[j]) = (list[j], list[i]);
         }
-    }
-
-    private class DestroyOnZone : MonoBehaviour
-    {
-        private Collider zone;
-        public void Init(Collider z) => zone = z;
-
-        private void OnTriggerEnter(Collider other)
-        {
-            if (zone != null && other == zone)
-                Destroy(gameObject);
-        }
-    }
-
-    private void OnDrawGizmosSelected()
-    {
-        if (!spawnPoint) return;
-        Gizmos.DrawWireSphere(spawnPoint.position, noOverlapRadius);
     }
 }

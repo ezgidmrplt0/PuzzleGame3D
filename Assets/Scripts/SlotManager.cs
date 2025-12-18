@@ -1,7 +1,8 @@
-﻿using System.Collections;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 using DG.Tweening;
+using TMPro;
 
 public enum Direction
 {
@@ -16,10 +17,13 @@ public class SlotManager : MonoBehaviour
 {
     public static SlotManager Instance { get; private set; }
 
+    // LevelManager için eventler
+    public static event Action OnMoveMade;
+    public static event Action OnMatch3;
+    public static event Action<int> OnScoreChanged;
+
     [Header("Zone Configuration")]
     [SerializeField] private int maxSlotsPerZone = 3;
-    [SerializeField] private float slotSpacing = 1.2f;
-    [SerializeField] private Vector3 placementOffset = Vector3.zero; // Manual XYZ adjustment
 
     [Header("Zone Origins")]
     [SerializeField] private Transform upZoneOrigin;
@@ -31,13 +35,20 @@ public class SlotManager : MonoBehaviour
     [SerializeField] private float moveDuration = 0.25f;
     [SerializeField] private Ease moveEase = Ease.OutBack;
 
-    [Header("Scoring/Game Settings")]
-    [SerializeField] private bool autoClearMatch3 = true;
+    [Header("Tap Destroy Limits")]
+    [SerializeField] private int normalDestroyLimit = 3;
+    private int normalDestroyRemaining;
 
-    // Internal Logical Grid
+    [Header("UI")]
+    [SerializeField] private TMP_Text normalDestroyText;
+
+    [Header("Score")]
+    [SerializeField] private TMP_Text scoreText;
+    private int score;
+
+    private bool inputEnabled = true;
+
     private Dictionary<Direction, List<FallingPiece>> grid;
-    
-    // Queue of objects waiting in the center
     private Queue<FallingPiece> centerQueue = new Queue<FallingPiece>();
 
     private void Awake()
@@ -46,7 +57,16 @@ public class SlotManager : MonoBehaviour
         else Destroy(gameObject);
 
         InitializeGrid();
+
+        normalDestroyRemaining = normalDestroyLimit;
+        RefreshDestroyUI();
+
+        score = 0;
+        RefreshScoreUI();
+        OnScoreChanged?.Invoke(score);
     }
+
+    public void SetInputEnabled(bool enabled) => inputEnabled = enabled;
 
     private void InitializeGrid()
     {
@@ -73,7 +93,69 @@ public class SlotManager : MonoBehaviour
         SwipeInput.OnTap -= OnTap;
     }
 
-    // --- Event Handlers ---
+    // ================= UI =================
+
+    private void RefreshDestroyUI()
+    {
+        if (normalDestroyText == null) return;
+
+        if (normalDestroyRemaining > 0)
+            normalDestroyText.text = $"Normal Destroy: {normalDestroyRemaining}/{normalDestroyLimit}";
+        else
+            normalDestroyText.text = "NO NORMAL DESTROY LEFT!";
+    }
+
+    private void RefreshScoreUI()
+    {
+        if (scoreText == null) return;
+        scoreText.text = $"Score: {score}";
+    }
+
+    private void AddScore(int amount)
+    {
+        score += amount;
+        RefreshScoreUI();
+        OnScoreChanged?.Invoke(score);
+    }
+
+    // ================= RESET (Fail olunca temizle) =================
+
+    public void ResetBoard()
+    {
+        // Center queue temizle
+        while (centerQueue.Count > 0)
+        {
+            var p = centerQueue.Dequeue();
+            if (p != null) Destroy(p.gameObject);
+        }
+
+        // Grid listeleri temizle
+        foreach (var kv in grid)
+            kv.Value.Clear();
+
+        // Slotların altındaki parçaları destroy et
+        ClearOriginChildren(upZoneOrigin);
+        ClearOriginChildren(downZoneOrigin);
+        ClearOriginChildren(leftZoneOrigin);
+        ClearOriginChildren(rightZoneOrigin);
+    }
+
+    private void ClearOriginChildren(Transform origin)
+    {
+        if (!origin) return;
+
+        // origin children = slotlar, slot children = parçalar
+        for (int i = 0; i < origin.childCount; i++)
+        {
+            var slot = origin.GetChild(i);
+            for (int c = slot.childCount - 1; c >= 0; c--)
+            {
+                Destroy(slot.GetChild(c).gameObject);
+            }
+        }
+    }
+
+    // ================= EVENTS =================
 
     private void OnPieceSpawned(FallingPiece piece)
     {
@@ -82,148 +164,129 @@ public class SlotManager : MonoBehaviour
 
     private void OnTap(Vector2 screenPos)
     {
+        if (!inputEnabled) return;
+
         Ray ray = Camera.main.ScreenPointToRay(screenPos);
-        if (Physics.Raycast(ray, out RaycastHit hit))
+        if (!Physics.Raycast(ray, out RaycastHit hit)) return;
+
+        FallingPiece hitPiece = hit.collider.GetComponent<FallingPiece>();
+        if (hitPiece == null) return;
+
+        // CASE 1: Center piece
+        if (centerQueue.Count > 0 && centerQueue.Peek() == hitPiece)
         {
-            FallingPiece hitPiece = hit.collider.GetComponent<FallingPiece>();
-            if (hitPiece == null) return;
+            var sp = FindObjectOfType<Spawner>();
 
-            // CASE 1: Tapping the Central Object (Waiting in queue)
-            if (centerQueue.Count > 0 && centerQueue.Peek() == hitPiece)
+            // Fake: unlimited (move saymıyoruz)
+            if (hitPiece.isFake)
             {
-                if (hitPiece.isFake)
-                {
-                    // Correct Move! Destroy Fake.
-                    Debug.Log("Success! Fake destroyed.");
-                    centerQueue.Dequeue();
-                    Destroy(hitPiece.gameObject);
-                    FindObjectOfType<Spawner>().SpawnNextPiece();
-                }
-                else
-                {
-                    // Penalize? Or just allow destroy? For now, allow but log warning.
-                    Debug.Log("Warning: You destroyed a valid piece!");
-                    centerQueue.Dequeue();
-                    Destroy(hitPiece.gameObject);
-                    FindObjectOfType<Spawner>().SpawnNextPiece();
-                }
-            }
-            // CASE 2: Tapping a Frozen Object in Slot
-            else if (hitPiece.isFrozen)
-            {
-                hitPiece.TakeDamage();
-                Debug.Log($"Frozen Hit! Health: {hitPiece.freezeHealth}");
+                AddScore(5);
 
-                if (hitPiece.freezeHealth <= 0)
-                {
-                    // Broken!
-                    // Remove from grid list? We need to find which list it belongs to.
-                    RemoveFromGrid(hitPiece);
-                    Destroy(hitPiece.gameObject);
-                }
-            }
-        }
-    }
+                if (sp) sp.NotifyCenterCleared(hitPiece);
 
-    private void RemoveFromGrid(FallingPiece piece)
-    {
-        foreach (var list in grid.Values)
-        {
-            if (list.Contains(piece))
-            {
-                list.Remove(piece);
+                centerQueue.Dequeue();
+                Destroy(hitPiece.gameObject);
+                if (sp) sp.SpawnNextPiece();
                 return;
+            }
+
+            // Normal: limited (move sayıyoruz)
+            if (normalDestroyRemaining <= 0)
+            {
+                Debug.Log("No normal destroy taps remaining!");
+                return;
+            }
+
+            normalDestroyRemaining--;
+            RefreshDestroyUI();
+            AddScore(2);
+
+            OnMoveMade?.Invoke(); // ✅ normal tap destroy = move
+
+            if (sp) sp.NotifyCenterCleared(hitPiece);
+
+            centerQueue.Dequeue();
+            Destroy(hitPiece.gameObject);
+            if (sp) sp.SpawnNextPiece();
+        }
+        // CASE 2: Frozen slot piece
+        else if (hitPiece.isFrozen)
+        {
+            hitPiece.TakeDamage();
+
+            if (hitPiece.freezeHealth <= 0)
+            {
+                RemoveFromGrid(hitPiece);
+                Destroy(hitPiece.gameObject);
             }
         }
     }
 
     private void OnSwipe(Direction dir)
     {
+        if (!inputEnabled) return;
+
         if (centerQueue.Count == 0) return;
-        FallingPiece piece = centerQueue.Peek();
+        if (IsZoneFull(dir)) return;
 
-        // 1. Check if Zone is Full
-        if (IsZoneFull(dir))
-        {
-            Debug.Log($"Zone {dir} is Full!");
-            return; 
-        }
-
-        // 2. Get Target Slot Transform
+        FallingPiece piece = centerQueue.Dequeue();
         Transform targetSlot = GetNextSlot(dir);
-        if (targetSlot == null) return; 
+        if (targetSlot == null) return;
 
-        // 3. Dequeue and Move
-        centerQueue.Dequeue();
-        
+        var sp = FindObjectOfType<Spawner>();
+
+        OnMoveMade?.Invoke(); // ✅ swipe = move
+        if (sp) sp.NotifyCenterCleared(piece);
+
         piece.TweenToSlot(targetSlot, moveDuration, moveEase, () =>
         {
             RegisterPiece(dir, piece);
-            
-            // FAKE LOGIC: If it was fake, FREEZE IT!
+
             if (piece.isFake)
-            {
                 piece.SetFrozen(true);
-                Debug.Log("Oops! You placed a fake. SLOT FROZEN!");
-                // Do NOT trigger match check for this specific placement if it's frozen
-            }
         });
-        
-        FindObjectOfType<Spawner>().SpawnNextPiece();
+
+        if (sp) sp.SpawnNextPiece();
     }
 
-    // --- Grid Logic (Formerly GridManager) ---
+    // ================= GRID =================
 
     private bool IsZoneFull(Direction dir)
     {
-        if (!grid.ContainsKey(dir)) return true;
         return grid[dir].Count >= maxSlotsPerZone;
     }
 
     private Transform GetNextSlot(Direction dir)
     {
-        if (!grid.ContainsKey(dir)) return null;
-
-        int slotIndex = grid[dir].Count;
         Transform origin = GetOrigin(dir);
+        int index = grid[dir].Count;
 
-        if (origin == null)
-        {
-             Debug.LogWarning($"[SlotManager] Origin for {dir} is not assigned!");
-             return null;
-        }
-
-        // Assumption: The physical slot objects (pink squares) are children of the Zone Origin
-        if (slotIndex < origin.childCount)
-        {
-            return origin.GetChild(slotIndex);
-        }
-        else
-        {
-            Debug.LogWarning($"[SlotManager] Not enough slots under {dir} origin! Expected index {slotIndex}");
-            return null;
-        }
+        if (origin == null || index >= origin.childCount) return null;
+        return origin.GetChild(index);
     }
 
     private void RegisterPiece(Direction dir, FallingPiece piece)
     {
-        if (!grid.ContainsKey(dir)) return;
         grid[dir].Add(piece);
+        CheckMatch3(dir);
+    }
 
-        if (autoClearMatch3)
-            CheckMatch3(dir);
+    private void RemoveFromGrid(FallingPiece piece)
+    {
+        foreach (var list in grid.Values)
+            if (list.Remove(piece)) return;
     }
 
     private Transform GetOrigin(Direction dir)
     {
-        switch (dir)
+        return dir switch
         {
-            case Direction.Up: return upZoneOrigin;
-            case Direction.Down: return downZoneOrigin;
-            case Direction.Left: return leftZoneOrigin;
-            case Direction.Right: return rightZoneOrigin;
-            default: return null;
-        }
+            Direction.Up => upZoneOrigin,
+            Direction.Down => downZoneOrigin,
+            Direction.Left => leftZoneOrigin,
+            Direction.Right => rightZoneOrigin,
+            _ => null
+        };
     }
 
     private void CheckMatch3(Direction dir)
@@ -231,26 +294,20 @@ public class SlotManager : MonoBehaviour
         var list = grid[dir];
         if (list.Count < 3) return;
 
-        // Check last 3 items
-        var p1 = list[list.Count - 1];
-        var p2 = list[list.Count - 2];
-        var p3 = list[list.Count - 3];
+        var a = list[^1];
+        var b = list[^2];
+        var c = list[^3];
 
-        if (p1 != null && p2 != null && p3 != null &&
-            !p1.isFrozen && !p2.isFrozen && !p3.isFrozen && // Ensure none are frozen
-            p1.pieceType == p2.pieceType && p2.pieceType == p3.pieceType)
+        if (!a.isFrozen && !b.isFrozen && !c.isFrozen &&
+            a.pieceType == b.pieceType && b.pieceType == c.pieceType)
         {
-            Debug.Log($"[SlotManager] MATCH-3 on {dir}!");
-            
-            // Remove from list
-            list.Remove(p1);
-            list.Remove(p2);
-            list.Remove(p3);
+            AddScore(10);
+            OnMatch3?.Invoke();
 
-            // Destroy visual
-            Destroy(p1.gameObject);
-            Destroy(p2.gameObject);
-            Destroy(p3.gameObject);
+            list.RemoveRange(list.Count - 3, 3);
+            Destroy(a.gameObject);
+            Destroy(b.gameObject);
+            Destroy(c.gameObject);
         }
     }
 }
