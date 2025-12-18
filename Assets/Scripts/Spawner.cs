@@ -69,92 +69,58 @@ public class Spawner : MonoBehaviour
     private void Start()
     {
         if (spawnOnStart)
-            SpawnForLevel(currentLevel);
+            SpawnForLevel(1);
     }
 
     public void SpawnForLevel(int level)
     {
         currentLevel = Mathf.Max(1, level);
-
-        if (spawnRoutine != null)
-            StopCoroutine(spawnRoutine);
-
-        spawnRoutine = StartCoroutine(SpawnRoutine());
+        SpawnNextPiece(); // Start with one piece
     }
 
-    private IEnumerator SpawnRoutine()
+    [Header("Difficulty")]
+    [Range(0, 100)]
+    [SerializeField] private float fakeChance = 20f; // Percent
+
+    // Called externally (e.g. by SlotManager) when ready for next
+    public void SpawnNextPiece()
     {
-        if (spawnPoint == null)
-        {
-            Debug.LogError("[Spawner] SpawnPoint atanmadı!");
-            yield break;
-        }
-        if (cubePrefab == null || spherePrefab == null)
-        {
-            Debug.LogError("[Spawner] cubePrefab ve spherePrefab Inspector'da atanmalı (tip tespiti için).");
-            yield break;
-        }
+        StartCoroutine(SpawnSinglePieceRoutine());
+    }
 
-        int index = currentLevel - 1;
-        if (levels == null || index < 0 || index >= levels.Count)
-        {
-            Debug.LogError($"[Spawner] Level config yok: Level {currentLevel}");
-            yield break;
-        }
+    private IEnumerator SpawnSinglePieceRoutine()
+    {
+        // Optional delay before new piece appears
+        yield return new WaitForSeconds(0.2f);
 
-        List<GameObject> list = new List<GameObject>();
-        foreach (var e in levels[index].spawns)
-        {
-            if (e.prefab == null || e.count <= 0) continue;
-            for (int i = 0; i < e.count; i++)
-                list.Add(e.prefab);
-        }
+        if (spawnPoint == null) yield break;
+        if (levels == null || levels.Count == 0) yield break;
 
-        if (shuffleOrder)
-            Shuffle(list);
+        // Simple random selection for now (or sequential from level config)
+        // For prototype: Just pick random prefab from level 1
+        var levelConfig = levels[0]; 
+        var randomSpawn = levelConfig.spawns[UnityEngine.Random.Range(0, levelConfig.spawns.Count)];
+        GameObject prefab = randomSpawn.prefab;
 
-        for (int i = 0; i < list.Count; i++)
-        {
-            if (!TryGetSpawnPosition(out Vector3 pos))
-            {
-                Debug.LogWarning("[Spawner] Boş spawn noktası bulunamadı (max deneme doldu). Bu spawn atlandı.");
-                yield return new WaitForSeconds(spawnInterval);
-                continue;
-            }
+        GameObject go = Instantiate(prefab, spawnPoint.position, Quaternion.identity);
 
-            GameObject prefab = list[i];
-            GameObject go = Instantiate(prefab, pos, Quaternion.identity);
+        // Rigidbody Setup: Suspend in air
+        Rigidbody rb = go.GetComponent<Rigidbody>();
+        if (!rb) rb = go.AddComponent<Rigidbody>();
+        rb.useGravity = false; // Don't fall
+        rb.isKinematic = true; // Don't move by physics
 
-            // Rigidbody
-            Rigidbody rb = go.GetComponent<Rigidbody>();
-            if (!rb) rb = go.AddComponent<Rigidbody>();
-            rb.useGravity = useGravity;
-            rb.isKinematic = false;
-            rb.drag = drag;
-            rb.angularDrag = angularDrag;
+        // FallingPiece Setup
+        FallingPiece fp = go.GetComponent<FallingPiece>();
+        if (!fp) fp = go.AddComponent<FallingPiece>();
+        fp.pieceType = (prefab == spherePrefab) ? FallingPiece.Type.Sphere : FallingPiece.Type.Cube;
 
-            // FallingPiece ekle + tip ver + SlotManager'a bildir
-            FallingPiece fp = go.GetComponent<FallingPiece>();
-            if (!fp) fp = go.AddComponent<FallingPiece>();
+        // FAKE LOGIC
+        bool isFake = UnityEngine.Random.value * 100f < fakeChance;
+        fp.SetFake(isFake);
 
-            fp.pieceType = (prefab == spherePrefab) ? FallingPiece.Type.Sphere : FallingPiece.Type.Cube;
-            OnPieceSpawned?.Invoke(fp);
-
-            // +X yönünde random kuvvet
-            float f = UnityEngine.Random.Range(forwardForceMin, forwardForceMax);
-            float zSide = UnityEngine.Random.Range(-sideForceZ, sideForceZ);
-            float yUp = UnityEngine.Random.Range(0f, upForce);
-            rb.AddForce(new Vector3(f, yUp, zSide), ForceMode.Impulse);
-
-            // DestroyZone'a girince sil
-            if (destroyZone != null && !go.TryGetComponent<DestroyOnZone>(out _))
-            {
-                var d = go.AddComponent<DestroyOnZone>();
-                d.Init(destroyZone);
-            }
-
-            yield return new WaitForSeconds(spawnInterval);
-        }
+        // Notify System
+        OnPieceSpawned?.Invoke(fp);
     }
 
     private bool TryGetSpawnPosition(out Vector3 pos)

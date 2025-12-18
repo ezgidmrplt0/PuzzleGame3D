@@ -1,70 +1,68 @@
 using UnityEngine;
+using System;
 
 public class SwipeInput : MonoBehaviour
 {
-    [Header("Refs")]
-    [SerializeField] private SlotManager slotManager;
+    public static event Action<Direction> OnSwipe; // Up, Down, Left, Right
+    public static event Action<Vector2> OnTap;
 
-    [Header("Swipe Settings")]
-    [SerializeField] private float minSwipeDistance = 60f;     // piksel
-    [SerializeField] private float horizontalBias = 1.2f;      // yatay > dikey*1.2 ise kabul et
-
+    [Header("Settings")]
+    [SerializeField] private float minSwipeDistance = 50f;
+    [SerializeField] private float tapThreshold = 0.2f; // Seconds
+    [SerializeField] private float maxTapMovement = 20f; // Pixels
+    
     private Vector2 startPos;
-    private bool isDown;
+    private float startTime;
+    private bool isTouching;
 
     void Update()
     {
-        // ---- TOUCH (Mobil / Emulator) ----
-        if (Input.touchCount > 0)
-        {
-            Touch t = Input.GetTouch(0);
-
-            if (t.phase == TouchPhase.Began)
-            {
-                startPos = t.position;
-                isDown = true;
-            }
-            else if ((t.phase == TouchPhase.Ended || t.phase == TouchPhase.Canceled) && isDown)
-            {
-                HandleSwipe(t.position);
-                isDown = false;
-            }
-
-            return; // touch varken mouse okuma
-        }
-
-        // ---- MOUSE (PC / Editor) ----
+        // Mouse / Touch unification
         if (Input.GetMouseButtonDown(0))
         {
-            startPos = (Vector2)Input.mousePosition;
-            isDown = true;
+            startPos = Input.mousePosition;
+            startTime = Time.time;
+            isTouching = true;
         }
-        else if (Input.GetMouseButtonUp(0) && isDown)
+        else if (Input.GetMouseButtonUp(0) && isTouching)
         {
-            HandleSwipe((Vector2)Input.mousePosition);
-            isDown = false;
+            HandleInput(Input.mousePosition);
+            isTouching = false;
         }
     }
 
-    private void HandleSwipe(Vector2 endPos)
+    private void HandleInput(Vector2 endPos)
     {
-        if (slotManager == null) return;
-
         Vector2 delta = endPos - startPos;
+        float timeDelta = Time.time - startTime;
+        float distance = delta.magnitude;
 
-        // yatay mý?
-        if (Mathf.Abs(delta.x) < minSwipeDistance) return;
-        if (Mathf.Abs(delta.x) < Mathf.Abs(delta.y) * horizontalBias) return;
-
-        if (delta.x > 0)
+        // CHECK TAP
+        if (timeDelta < tapThreshold && distance < maxTapMovement)
         {
-            // saða swipe -> sað slot: Sphere
-            slotManager.PlaceRightSphere();
+            Debug.Log("[Input] Tap Detected");
+            OnTap?.Invoke(endPos);
+            return;
         }
-        else
+
+        // CHECK SWIPE
+        if (distance >= minSwipeDistance)
         {
-            // sola swipe -> sol slot: Cube
-            slotManager.PlaceLeftCube();
+            float x = delta.x;
+            float y = delta.y;
+
+            if (Mathf.Abs(x) > Mathf.Abs(y))
+            {
+                // Horizontal
+                Direction dir = (x > 0) ? Direction.Right : Direction.Left;
+                OnSwipe?.Invoke(dir);
+            }
+            else
+            {
+                // Vertical
+                Direction dir = (y > 0) ? Direction.Up : Direction.Down;
+                OnSwipe?.Invoke(dir);
+            }
         }
     }
 }

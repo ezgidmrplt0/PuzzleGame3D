@@ -3,113 +3,254 @@ using System.Collections.Generic;
 using UnityEngine;
 using DG.Tweening;
 
+public enum Direction
+{
+    None,
+    Up,
+    Down,
+    Left,
+    Right
+}
+
 public class SlotManager : MonoBehaviour
 {
-    [Header("Slot Points (Top -> Bottom)")]
-    public List<Transform> leftSlotPoints;   // L0,L1,L2
-    public List<Transform> rightSlotPoints;  // R0,R1,R2
+    public static SlotManager Instance { get; private set; }
 
-    [Header("Tween Settings")]
-    public float moveToSlotDuration = 0.25f;
-    public Ease moveEase = Ease.OutBack;
+    [Header("Zone Configuration")]
+    [SerializeField] private int maxSlotsPerZone = 3;
+    [SerializeField] private float slotSpacing = 1.2f;
+    [SerializeField] private Vector3 placementOffset = Vector3.zero; // Manual XYZ adjustment
 
-    [Header("Scoring")]
-    public int scorePerTriple = 10;
-    public float clearDelay = 0.35f; // 3. taşı gördükten sonra temizle
-    public int Score { get; private set; }
+    [Header("Zone Origins")]
+    [SerializeField] private Transform upZoneOrigin;
+    [SerializeField] private Transform downZoneOrigin;
+    [SerializeField] private Transform leftZoneOrigin;
+    [SerializeField] private Transform rightZoneOrigin;
 
-    // Düşen objeler kuyruğu (gerçek objeler)
-    private readonly Queue<FallingPiece> cubes = new Queue<FallingPiece>();
-    private readonly Queue<FallingPiece> spheres = new Queue<FallingPiece>();
+    [Header("Animation Settings")]
+    [SerializeField] private float moveDuration = 0.25f;
+    [SerializeField] private Ease moveEase = Ease.OutBack;
 
-    // Kolon içindeki gerçek objeler
-    private readonly List<FallingPiece> leftPieces = new List<FallingPiece>();
-    private readonly List<FallingPiece> rightPieces = new List<FallingPiece>();
+    [Header("Scoring/Game Settings")]
+    [SerializeField] private bool autoClearMatch3 = true;
 
-    private bool leftClearing, rightClearing;
+    // Internal Logical Grid
+    private Dictionary<Direction, List<FallingPiece>> grid;
+    
+    // Queue of objects waiting in the center
+    private Queue<FallingPiece> centerQueue = new Queue<FallingPiece>();
 
-    private void OnEnable() => Spawner.OnPieceSpawned += OnSpawned;
-    private void OnDisable() => Spawner.OnPieceSpawned -= OnSpawned;
-
-    private void OnSpawned(FallingPiece fp)
+    private void Awake()
     {
-        if (fp == null) return;
+        if (Instance == null) Instance = this;
+        else Destroy(gameObject);
 
-        if (fp.pieceType == FallingPiece.Type.Cube) cubes.Enqueue(fp);
-        else spheres.Enqueue(fp);
+        InitializeGrid();
     }
 
-    // SwipeInput çağırır:
-    public void PlaceLeftCube()
+    private void InitializeGrid()
     {
-        if (leftClearing) return;
-        if (leftPieces.Count >= 3) return;
-        if (cubes.Count == 0) return;
-
-        var fp = cubes.Dequeue();
-        if (fp == null) return;
-
-        int idx = leftPieces.Count; // 0-1-2
-        Transform target = leftSlotPoints[idx];
-
-        // Düşen objeyi slota uçur
-        fp.TweenToSlot(target, moveToSlotDuration, moveEase, () =>
+        grid = new Dictionary<Direction, List<FallingPiece>>
         {
-            leftPieces.Add(fp);
-
-            // 3 olduysa önce göster, sonra temizle
-            if (leftPieces.Count == 3)
-                StartCoroutine(ClearIfTripleAfterDelay(leftPieces, true));
-        });
+            { Direction.Up, new List<FallingPiece>() },
+            { Direction.Down, new List<FallingPiece>() },
+            { Direction.Left, new List<FallingPiece>() },
+            { Direction.Right, new List<FallingPiece>() }
+        };
     }
 
-    public void PlaceRightSphere()
+    private void OnEnable()
     {
-        if (rightClearing) return;
-        if (rightPieces.Count >= 3) return;
-        if (spheres.Count == 0) return;
-
-        var fp = spheres.Dequeue();
-        if (fp == null) return;
-
-        int idx = rightPieces.Count; // 0-1-2
-        Transform target = rightSlotPoints[idx];
-
-        fp.TweenToSlot(target, moveToSlotDuration, moveEase, () =>
-        {
-            rightPieces.Add(fp);
-
-            if (rightPieces.Count == 3)
-                StartCoroutine(ClearIfTripleAfterDelay(rightPieces, false));
-        });
+        Spawner.OnPieceSpawned += OnPieceSpawned;
+        SwipeInput.OnSwipe += OnSwipe;
+        SwipeInput.OnTap += OnTap;
     }
 
-    private IEnumerator ClearIfTripleAfterDelay(List<FallingPiece> col, bool isLeft)
+    private void OnDisable()
     {
-        if (isLeft) leftClearing = true; else rightClearing = true;
+        Spawner.OnPieceSpawned -= OnPieceSpawned;
+        SwipeInput.OnSwipe -= OnSwipe;
+        SwipeInput.OnTap -= OnTap;
+    }
 
-        // 3. taşı bir an gör
-        yield return new WaitForSeconds(clearDelay);
+    // --- Event Handlers ---
 
-        // Hepsi aynı mı? (sol zaten sadece cube, sağ sadece sphere olduğu için bu hep true)
-        // Ama ileride karışık yaparsan diye güvenli kontrol:
-        bool allSame = col.Count == 3 &&
-                       col[0] != null && col[1] != null && col[2] != null &&
-                       col[0].pieceType == col[1].pieceType && col[1].pieceType == col[2].pieceType;
+    private void OnPieceSpawned(FallingPiece piece)
+    {
+        centerQueue.Enqueue(piece);
+    }
 
-        if (allSame)
+    private void OnTap(Vector2 screenPos)
+    {
+        Ray ray = Camera.main.ScreenPointToRay(screenPos);
+        if (Physics.Raycast(ray, out RaycastHit hit))
         {
-            Score += scorePerTriple;
-            Debug.Log("SCORE: " + Score);
+            FallingPiece hitPiece = hit.collider.GetComponent<FallingPiece>();
+            if (hitPiece == null) return;
 
-            // Slotları boşalt (objeleri yok et)
-            for (int i = col.Count - 1; i >= 0; i--)
+            // CASE 1: Tapping the Central Object (Waiting in queue)
+            if (centerQueue.Count > 0 && centerQueue.Peek() == hitPiece)
             {
-                if (col[i] != null) Destroy(col[i].gameObject);
+                if (hitPiece.isFake)
+                {
+                    // Correct Move! Destroy Fake.
+                    Debug.Log("Success! Fake destroyed.");
+                    centerQueue.Dequeue();
+                    Destroy(hitPiece.gameObject);
+                    FindObjectOfType<Spawner>().SpawnNextPiece();
+                }
+                else
+                {
+                    // Penalize? Or just allow destroy? For now, allow but log warning.
+                    Debug.Log("Warning: You destroyed a valid piece!");
+                    centerQueue.Dequeue();
+                    Destroy(hitPiece.gameObject);
+                    FindObjectOfType<Spawner>().SpawnNextPiece();
+                }
             }
-            col.Clear();
+            // CASE 2: Tapping a Frozen Object in Slot
+            else if (hitPiece.isFrozen)
+            {
+                hitPiece.TakeDamage();
+                Debug.Log($"Frozen Hit! Health: {hitPiece.freezeHealth}");
+
+                if (hitPiece.freezeHealth <= 0)
+                {
+                    // Broken!
+                    // Remove from grid list? We need to find which list it belongs to.
+                    RemoveFromGrid(hitPiece);
+                    Destroy(hitPiece.gameObject);
+                }
+            }
+        }
+    }
+
+    private void RemoveFromGrid(FallingPiece piece)
+    {
+        foreach (var list in grid.Values)
+        {
+            if (list.Contains(piece))
+            {
+                list.Remove(piece);
+                return;
+            }
+        }
+    }
+
+    private void OnSwipe(Direction dir)
+    {
+        if (centerQueue.Count == 0) return;
+        FallingPiece piece = centerQueue.Peek();
+
+        // 1. Check if Zone is Full
+        if (IsZoneFull(dir))
+        {
+            Debug.Log($"Zone {dir} is Full!");
+            return; 
         }
 
-        if (isLeft) leftClearing = false; else rightClearing = false;
+        // 2. Get Target Slot Transform
+        Transform targetSlot = GetNextSlot(dir);
+        if (targetSlot == null) return; 
+
+        // 3. Dequeue and Move
+        centerQueue.Dequeue();
+        
+        piece.TweenToSlot(targetSlot, moveDuration, moveEase, () =>
+        {
+            RegisterPiece(dir, piece);
+            
+            // FAKE LOGIC: If it was fake, FREEZE IT!
+            if (piece.isFake)
+            {
+                piece.SetFrozen(true);
+                Debug.Log("Oops! You placed a fake. SLOT FROZEN!");
+                // Do NOT trigger match check for this specific placement if it's frozen
+            }
+        });
+        
+        FindObjectOfType<Spawner>().SpawnNextPiece();
+    }
+
+    // --- Grid Logic (Formerly GridManager) ---
+
+    private bool IsZoneFull(Direction dir)
+    {
+        if (!grid.ContainsKey(dir)) return true;
+        return grid[dir].Count >= maxSlotsPerZone;
+    }
+
+    private Transform GetNextSlot(Direction dir)
+    {
+        if (!grid.ContainsKey(dir)) return null;
+
+        int slotIndex = grid[dir].Count;
+        Transform origin = GetOrigin(dir);
+
+        if (origin == null)
+        {
+             Debug.LogWarning($"[SlotManager] Origin for {dir} is not assigned!");
+             return null;
+        }
+
+        // Assumption: The physical slot objects (pink squares) are children of the Zone Origin
+        if (slotIndex < origin.childCount)
+        {
+            return origin.GetChild(slotIndex);
+        }
+        else
+        {
+            Debug.LogWarning($"[SlotManager] Not enough slots under {dir} origin! Expected index {slotIndex}");
+            return null;
+        }
+    }
+
+    private void RegisterPiece(Direction dir, FallingPiece piece)
+    {
+        if (!grid.ContainsKey(dir)) return;
+        grid[dir].Add(piece);
+
+        if (autoClearMatch3)
+            CheckMatch3(dir);
+    }
+
+    private Transform GetOrigin(Direction dir)
+    {
+        switch (dir)
+        {
+            case Direction.Up: return upZoneOrigin;
+            case Direction.Down: return downZoneOrigin;
+            case Direction.Left: return leftZoneOrigin;
+            case Direction.Right: return rightZoneOrigin;
+            default: return null;
+        }
+    }
+
+    private void CheckMatch3(Direction dir)
+    {
+        var list = grid[dir];
+        if (list.Count < 3) return;
+
+        // Check last 3 items
+        var p1 = list[list.Count - 1];
+        var p2 = list[list.Count - 2];
+        var p3 = list[list.Count - 3];
+
+        if (p1 != null && p2 != null && p3 != null &&
+            !p1.isFrozen && !p2.isFrozen && !p3.isFrozen && // Ensure none are frozen
+            p1.pieceType == p2.pieceType && p2.pieceType == p3.pieceType)
+        {
+            Debug.Log($"[SlotManager] MATCH-3 on {dir}!");
+            
+            // Remove from list
+            list.Remove(p1);
+            list.Remove(p2);
+            list.Remove(p3);
+
+            // Destroy visual
+            Destroy(p1.gameObject);
+            Destroy(p2.gameObject);
+            Destroy(p3.gameObject);
+        }
     }
 }
