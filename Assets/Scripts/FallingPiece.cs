@@ -3,12 +3,24 @@ using DG.Tweening;
 
 public class FallingPiece : MonoBehaviour
 {
-    public enum Type { Cube, Sphere }
-    public Type pieceType;
+    public enum Type 
+    { 
+        Object1, 
+        Object2, 
+        Object3, 
+        Object4, 
+        Object5 
+    }
+    
+    [Header("Settings")]
+    public Type pieceType; // Set this in Prefab!
 
     public bool isFake { get; private set; }
     public bool isFrozen { get; private set; }
     public int freezeHealth { get; private set; } = 3;
+
+    [Header("Visuals")]
+    [SerializeField] private Texture faceTexture; // Drag your image here
 
     private MeshRenderer meshRenderer;
     private Color originalColor;
@@ -24,7 +36,16 @@ public class FallingPiece : MonoBehaviour
 
         col = GetComponent<Collider>();
         meshRenderer = GetComponent<MeshRenderer>();
-        if (meshRenderer) originalColor = meshRenderer.material.color;
+        if (meshRenderer) 
+        {
+            originalColor = meshRenderer.material.color;
+            
+            // Apply Texture if assigned
+            if (faceTexture != null)
+            {
+                meshRenderer.material.mainTexture = faceTexture;
+            }
+        }
     }
 
     public void SetFake(bool fake)

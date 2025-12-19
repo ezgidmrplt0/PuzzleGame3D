@@ -6,16 +6,15 @@ using UnityEngine;
 public class Spawner : MonoBehaviour
 {
     public static event Action<FallingPiece> OnPieceSpawned;
-    // public static event Action OnBagEmpty; // Removed
-
-    [Header("Piece Prefabs (tip tespiti için şart)")]
-    [SerializeField] private GameObject cubePrefab;
-    [SerializeField] private GameObject spherePrefab;
 
     [Header("Spawn Point")]
     [SerializeField] private Transform spawnPoint;
 
-    [Header("Level Configs (0 = Level 1)")]
+    [Header("Piece Pool (Tüm Objeler)")]
+    [SerializeField] private List<GameObject> availablePieces; 
+
+    [Header("Level Configs (Difficulty Only)")]
+    [Tooltip("Buradan Level 1, Level 2 gibi özel zorluk ayarları yapabilirsiniz. Obje seçimi otomatik olur.")]
     [SerializeField] private List<LevelConfig> levels = new List<LevelConfig>();
 
     [Header("Runtime")]
@@ -25,30 +24,26 @@ public class Spawner : MonoBehaviour
     [Header("Spawn Timing")]
     [SerializeField] private bool spawnOnStart = false; 
     
-    // ===== Center Lock (üst üste spawn fix) =====
     private FallingPiece currentCenterPiece;
 
     [Serializable]
     public class LevelConfig
     {
-        [Header("Goal")]
+        [Header("Zorluk Ayarları")]
         public int targetMatches = 3;
-
-        [Header("Limits")]
-        public int timeLimitSeconds = 45;
-
-        [Header("Difficulty")]
+        public int timeLimitSeconds = 60;
         [Range(0, 100)] public float fakeChance = 20f;
 
-        [Header("Bag Content")]
+        // Auto-filled at runtime from pool. User doesn't need to touch this.
+        [HideInInspector] 
         public List<SpawnEntry> spawns = new List<SpawnEntry>();
     }
 
-    [Serializable]
+    [Serializable] // Needed for internal use
     public class SpawnEntry
     {
         public GameObject prefab;
-        [Min(0)] public int count = 1;
+        public int count = 1;
     }
 
     private void Start()
@@ -59,71 +54,115 @@ public class Spawner : MonoBehaviour
 
     public LevelConfig GetLevelConfig(int level)
     {
-        // 1. Try to get from Hand-Crafted List
+        LevelConfig cfg = null;
+
+        // 1. Try to get Hand-Crafted Difficulty
         if (levels != null && levels.Count > 0)
         {
             int idx = level - 1;
-            if (idx < levels.Count) return levels[idx];
+            if (idx < levels.Count)
+            {
+                // Clone settings from inspector
+                var preset = levels[idx];
+                cfg = new LevelConfig();
+                cfg.targetMatches = preset.targetMatches;
+                cfg.timeLimitSeconds = preset.timeLimitSeconds;
+                cfg.fakeChance = preset.fakeChance;
+            }
         }
 
-        // 2. Fallback: Procedural Generation (Infinite)
-        return GenerateProceduralConfig(level);
+        // 2. If no config found (Infinite Mode), generate purely procedural difficulty
+        if (cfg == null)
+        {
+            cfg = GenerateProceduralDifficulty(level);
+        }
+
+        // 3. AUTO-POPULATE PIECES (For BOTH types)
+        // This ensures even hand-crafted levels get random pieces from the pool.
+        PopulateSpawnsFromPool(cfg, level);
+
+        return cfg;
     }
 
-    private LevelConfig GenerateProceduralConfig(int level)
+    private LevelConfig GenerateProceduralDifficulty(int level)
     {
         LevelConfig cfg = new LevelConfig();
         
-        // --- DIFFICULTY ROULETTE ---
-        float roll = UnityEngine.Random.value; // 0.0 to 1.0
+        float roll = UnityEngine.Random.value; 
 
-        if (roll < 0.50f) // 50% EASY
+        if (roll < 0.50f) 
         {
+            // EASY
             cfg.fakeChance = UnityEngine.Random.Range(5f, 15f);
-            cfg.targetMatches = 3 + (level / 5); // Slowly incresing
-            Debug.Log($"[Spawner] Generated EASY Level {level}");
+            cfg.targetMatches = 3 + (level / 5); 
+            cfg.timeLimitSeconds = 45 + (level / 2);
         }
-        else if (roll < 0.80f) // 30% MEDIUM
+        else if (roll < 0.80f) 
         {
+            // MEDIUM
             cfg.fakeChance = UnityEngine.Random.Range(20f, 35f);
             cfg.targetMatches = 5 + (level / 4);
-            Debug.Log($"[Spawner] Generated MEDIUM Level {level}");
+            cfg.timeLimitSeconds = 40 + (level / 3);
         }
-        else if (roll < 0.95f) // 15% HARD
+        else if (roll < 0.95f) 
         {
+            // HARD
             cfg.fakeChance = UnityEngine.Random.Range(40f, 60f);
             cfg.targetMatches = 8 + (level / 3);
-            Debug.Log($"[Spawner] Generated HARD Level {level}");
+            cfg.timeLimitSeconds = 35 + (level / 3);
         }
-        else // 5% EXPERT
+        else 
         {
-            cfg.fakeChance = 80f; // Chaos!
+            // CHAOS
+            cfg.fakeChance = 80f; 
             cfg.targetMatches = 10 + (level / 2);
-            Debug.Log($"[Spawner] Generated EXPERT Level {level}");
+            cfg.timeLimitSeconds = 30 + (level / 4);
         }
-
-        // Always allow all types for procedural (or unlock gradually)
-        cfg.spawns = new List<SpawnEntry>
-        {
-            new SpawnEntry { prefab = cubePrefab, count = 100 }, // Dummy infinite counts
-            new SpawnEntry { prefab = spherePrefab, count = 100 }
-        };
 
         return cfg;
+    }
+
+    private void PopulateSpawnsFromPool(LevelConfig cfg, int level)
+    {
+        cfg.spawns = new List<SpawnEntry>();
+        
+        if (availablePieces != null && availablePieces.Count > 0)
+        {
+            int totalAvailable = availablePieces.Count;
+            int typeCountToUse = 2; // Default
+
+            // Logic: More types for harder levels
+            if (cfg.fakeChance < 20f) typeCountToUse = 2;       
+            else if (cfg.fakeChance < 40f) typeCountToUse = 3;  
+            else typeCountToUse = 4;                            
+
+            typeCountToUse = Mathf.Clamp(typeCountToUse, 2, totalAvailable);
+
+            // Shuffle pool
+            List<GameObject> pool = new List<GameObject>(availablePieces);
+            Shuffle(pool);
+
+            // Pick N items
+            for (int i = 0; i < typeCountToUse; i++)
+            {
+                if (pool[i] != null)
+                {
+                    cfg.spawns.Add(new SpawnEntry { prefab = pool[i], count = 100 });
+                }
+            }
+        }
+        else
+        {
+            Debug.LogError("[Spawner] ERROR: No pieces in 'Available Pieces' pool!");
+        }
     }
 
     public void StartLevel(int level)
     {
         currentLevel = Mathf.Max(1, level);
         currentCenterPiece = null;
-        
-        // No bag building needed anymore. 
-        // We just use the config to know WHICH pieces are allowed.
-        
         SpawnNextPiece();
     }
-
-    // Removed BuildBagForLevel
 
     public void SpawnNextPiece()
     {
@@ -135,18 +174,15 @@ public class Spawner : MonoBehaviour
         yield return new WaitForSeconds(0.2f);
 
         if (spawnPoint == null) yield break;
-
-        // ✅ center doluysa spawn etme
-        if (currentCenterPiece != null)
-            yield break;
+        if (currentCenterPiece != null) yield break;
 
         var cfg = GetLevelConfig(currentLevel);
         if (cfg == null || cfg.spawns.Count == 0) yield break;
 
-        // INFINITE SPAWN LOGIC:
-        // Pick a random entry from the allowed list
         var randomEntry = cfg.spawns[UnityEngine.Random.Range(0, cfg.spawns.Count)];
         GameObject prefab = randomEntry.prefab;
+
+        if (prefab == null) yield break;
 
         GameObject go = Instantiate(prefab, spawnPoint.position, Quaternion.identity);
 
@@ -157,18 +193,14 @@ public class Spawner : MonoBehaviour
 
         FallingPiece fp = go.GetComponent<FallingPiece>();
         if (!fp) fp = go.AddComponent<FallingPiece>();
-        fp.pieceType = (prefab == spherePrefab) ? FallingPiece.Type.Sphere : FallingPiece.Type.Cube;
-
+        
         bool isFake = UnityEngine.Random.value * 100f < cfg.fakeChance;
         fp.SetFake(isFake);
 
-        // ✅ center lock set
         currentCenterPiece = fp;
-
         OnPieceSpawned?.Invoke(fp);
     }
 
-    // ✅ SlotManager, merkez boşaldığında çağırır
     public void NotifyCenterCleared(FallingPiece piece)
     {
         if (currentCenterPiece == piece)

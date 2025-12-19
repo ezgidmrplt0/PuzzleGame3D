@@ -1472,18 +1472,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: df78542e9c33fd849b98e75c247a2ba7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  cubePrefab: {fileID: 5269077711324498485, guid: 8bae444e037697149ad454b95c6d518e, type: 3}
-  spherePrefab: {fileID: 5645053320511350777, guid: 1f4a5bdbf225d8f41a5e3ccb16a62ac3, type: 3}
   spawnPoint: {fileID: 687155734}
+  availablePieces:
+  - {fileID: 5269077711324498485, guid: 8bae444e037697149ad454b95c6d518e, type: 3}
+  - {fileID: 5269077711324498485, guid: 5a43ad8fb52315aef9c60e6437a9cae6, type: 3}
+  - {fileID: 5269077711324498485, guid: 0c83e4a6ea17c7b22a8964596898a4d0, type: 3}
   levels:
   - targetMatches: 3
-    timeLimitSeconds: 45
+    timeLimitSeconds: 60
     fakeChance: 20
-    spawns:
-    - prefab: {fileID: 5269077711324498485, guid: 8bae444e037697149ad454b95c6d518e, type: 3}
-      count: 3
-    - prefab: {fileID: 5645053320511350777, guid: 1f4a5bdbf225d8f41a5e3ccb16a62ac3, type: 3}
-      count: 3
+    spawns: []
   currentLevel: 1
   spawnOnStart: 0
 --- !u!4 &687155734
@@ -3471,10 +3469,6 @@ MonoBehaviour:
   rightZoneOrigin: {fileID: 809195343}
   moveDuration: 0.25
   moveEase: 27
-  enableContentShuffle: 1
-  shuffleInterval: 12
-  shuffleMoveDuration: 0.5
-  shuffleEase: 4
 --- !u!4 &1669411851
 Transform:
   m_ObjectHideFlags: 0
