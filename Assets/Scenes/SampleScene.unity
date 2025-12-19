@@ -1481,6 +1481,7 @@ MonoBehaviour:
   - targetMatches: 3
     timeLimitSeconds: 60
     fakeChance: 20
+    pieceTypeCount: 2
     spawns: []
   currentLevel: 1
   spawnOnStart: 0
@@ -3462,7 +3463,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0a38fd8f3f2af7246890f3e3a7a2254d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxSlotsPerZone: 3
   upZoneOrigin: {fileID: 225110990}
   downZoneOrigin: {fileID: 1561043164}
   leftZoneOrigin: {fileID: 700963025}

@@ -25,6 +25,7 @@ public class Spawner : MonoBehaviour
     [SerializeField] private bool spawnOnStart = false; 
     
     private FallingPiece currentCenterPiece;
+    private LevelConfig currentLevelConfig; // CACHED CONFIG
 
     [Serializable]
     public class LevelConfig
@@ -33,18 +34,24 @@ public class Spawner : MonoBehaviour
         public int targetMatches = 3;
         public int timeLimitSeconds = 60;
         [Range(0, 100)] public float fakeChance = 20f;
+        
+        [Header("Çeşitlilik")]
+        [Tooltip("Bu levelde kaç farklı obje türü olacak? (Örn: 2 seçerseniz Küp ve Küre gelir)")]
+        [Range(2, 6)] public int pieceTypeCount = 2;
 
         // Auto-filled at runtime from pool. User doesn't need to touch this.
         [HideInInspector] 
         public List<SpawnEntry> spawns = new List<SpawnEntry>();
     }
 
-    [Serializable] // Needed for internal use
+    [Serializable] // Needed for internal use (and potentially inspector if valid)
     public class SpawnEntry
     {
         public GameObject prefab;
         public int count = 1;
     }
+
+    // ... (Classes omitted) ...
 
     private void Start()
     {
@@ -52,7 +59,22 @@ public class Spawner : MonoBehaviour
             StartLevel(1);
     }
 
+    // Public API: Get existing config or create new one (Ensures consistency)
     public LevelConfig GetLevelConfig(int level)
+    {
+        // If we already generated this level's config, return it! 
+        // (Prevents re-shuffling pieces mid-game)
+        if (currentLevelConfig != null && currentLevel == level)
+        {
+            return currentLevelConfig;
+        }
+
+        // otherwise generate new
+        return CreateLevelConfig(level);
+    }
+
+    // Interval Method: Generates new config from scratch
+    private LevelConfig CreateLevelConfig(int level)
     {
         LevelConfig cfg = null;
 
@@ -68,6 +90,7 @@ public class Spawner : MonoBehaviour
                 cfg.targetMatches = preset.targetMatches;
                 cfg.timeLimitSeconds = preset.timeLimitSeconds;
                 cfg.fakeChance = preset.fakeChance;
+                cfg.pieceTypeCount = preset.pieceTypeCount; 
             }
         }
 
@@ -77,8 +100,7 @@ public class Spawner : MonoBehaviour
             cfg = GenerateProceduralDifficulty(level);
         }
 
-        // 3. AUTO-POPULATE PIECES (For BOTH types)
-        // This ensures even hand-crafted levels get random pieces from the pool.
+        // 3. AUTO-POPULATE PIECES
         PopulateSpawnsFromPool(cfg, level);
 
         return cfg;
@@ -96,6 +118,7 @@ public class Spawner : MonoBehaviour
             cfg.fakeChance = UnityEngine.Random.Range(5f, 15f);
             cfg.targetMatches = 3 + (level / 5); 
             cfg.timeLimitSeconds = 45 + (level / 2);
+            cfg.pieceTypeCount = 2;
         }
         else if (roll < 0.80f) 
         {
@@ -103,6 +126,7 @@ public class Spawner : MonoBehaviour
             cfg.fakeChance = UnityEngine.Random.Range(20f, 35f);
             cfg.targetMatches = 5 + (level / 4);
             cfg.timeLimitSeconds = 40 + (level / 3);
+            cfg.pieceTypeCount = 3;
         }
         else if (roll < 0.95f) 
         {
@@ -110,6 +134,7 @@ public class Spawner : MonoBehaviour
             cfg.fakeChance = UnityEngine.Random.Range(40f, 60f);
             cfg.targetMatches = 8 + (level / 3);
             cfg.timeLimitSeconds = 35 + (level / 3);
+            cfg.pieceTypeCount = 4;
         }
         else 
         {
@@ -117,6 +142,7 @@ public class Spawner : MonoBehaviour
             cfg.fakeChance = 80f; 
             cfg.targetMatches = 10 + (level / 2);
             cfg.timeLimitSeconds = 30 + (level / 4);
+            cfg.pieceTypeCount = 5;
         }
 
         return cfg;
@@ -129,12 +155,8 @@ public class Spawner : MonoBehaviour
         if (availablePieces != null && availablePieces.Count > 0)
         {
             int totalAvailable = availablePieces.Count;
-            int typeCountToUse = 2; // Default
-
-            // Logic: More types for harder levels
-            if (cfg.fakeChance < 20f) typeCountToUse = 2;       
-            else if (cfg.fakeChance < 40f) typeCountToUse = 3;  
-            else typeCountToUse = 4;                            
+            // Use the explicit count set in Inspector (or generated procedurally)
+            int typeCountToUse = cfg.pieceTypeCount;
 
             typeCountToUse = Mathf.Clamp(typeCountToUse, 2, totalAvailable);
 
@@ -161,8 +183,14 @@ public class Spawner : MonoBehaviour
     {
         currentLevel = Mathf.Max(1, level);
         currentCenterPiece = null;
+        
+        // Init config (if not already done by LevelManager)
+        currentLevelConfig = GetLevelConfig(currentLevel);
+        
         SpawnNextPiece();
     }
+
+    // public LevelConfig GetCurrentConfig() => currentLevelConfig; // Removed, use GetLevelConfig
 
     public void SpawnNextPiece()
     {
@@ -176,7 +204,9 @@ public class Spawner : MonoBehaviour
         if (spawnPoint == null) yield break;
         if (currentCenterPiece != null) yield break;
 
+        // Use standard accessor which is now cached
         var cfg = GetLevelConfig(currentLevel);
+        
         if (cfg == null || cfg.spawns.Count == 0) yield break;
 
         var randomEntry = cfg.spawns[UnityEngine.Random.Range(0, cfg.spawns.Count)];

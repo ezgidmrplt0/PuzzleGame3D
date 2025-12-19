@@ -21,7 +21,7 @@ public class SlotManager : MonoBehaviour
     public static event Action OnMatch3;
 
     [Header("Zone Configuration")]
-    [SerializeField] private int maxSlotsPerZone = 3;
+
 
     [Header("Zone Origins")]
     [SerializeField] private Transform upZoneOrigin;
