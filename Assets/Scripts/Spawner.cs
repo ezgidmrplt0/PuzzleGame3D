@@ -6,7 +6,7 @@ using UnityEngine;
 public class Spawner : MonoBehaviour
 {
     public static event Action<FallingPiece> OnPieceSpawned;
-    public static event Action OnBagEmpty;
+    // public static event Action OnBagEmpty; // Removed
 
     [Header("Piece Prefabs (tip tespiti için şart)")]
     [SerializeField] private GameObject cubePrefab;
@@ -23,13 +23,8 @@ public class Spawner : MonoBehaviour
     [SerializeField] private int currentLevel = 1;
 
     [Header("Spawn Timing")]
-    [SerializeField] private bool spawnOnStart = false;   // ✅ LevelManager varken FALSE
-    [SerializeField] private bool shuffleOrder = true;
-
-    // ===== Level Bag Runtime =====
-    private readonly List<GameObject> bag = new List<GameObject>();
-    private int bagIndex = 0;
-
+    [SerializeField] private bool spawnOnStart = false; 
+    
     // ===== Center Lock (üst üste spawn fix) =====
     private FallingPiece currentCenterPiece;
 
@@ -64,41 +59,71 @@ public class Spawner : MonoBehaviour
 
     public LevelConfig GetLevelConfig(int level)
     {
-        if (levels == null || levels.Count == 0) return null;
-        int idx = Mathf.Clamp(level - 1, 0, levels.Count - 1);
-        return levels[idx];
+        // 1. Try to get from Hand-Crafted List
+        if (levels != null && levels.Count > 0)
+        {
+            int idx = level - 1;
+            if (idx < levels.Count) return levels[idx];
+        }
+
+        // 2. Fallback: Procedural Generation (Infinite)
+        return GenerateProceduralConfig(level);
+    }
+
+    private LevelConfig GenerateProceduralConfig(int level)
+    {
+        LevelConfig cfg = new LevelConfig();
+        
+        // --- DIFFICULTY ROULETTE ---
+        float roll = UnityEngine.Random.value; // 0.0 to 1.0
+
+        if (roll < 0.50f) // 50% EASY
+        {
+            cfg.fakeChance = UnityEngine.Random.Range(5f, 15f);
+            cfg.targetMatches = 3 + (level / 5); // Slowly incresing
+            Debug.Log($"[Spawner] Generated EASY Level {level}");
+        }
+        else if (roll < 0.80f) // 30% MEDIUM
+        {
+            cfg.fakeChance = UnityEngine.Random.Range(20f, 35f);
+            cfg.targetMatches = 5 + (level / 4);
+            Debug.Log($"[Spawner] Generated MEDIUM Level {level}");
+        }
+        else if (roll < 0.95f) // 15% HARD
+        {
+            cfg.fakeChance = UnityEngine.Random.Range(40f, 60f);
+            cfg.targetMatches = 8 + (level / 3);
+            Debug.Log($"[Spawner] Generated HARD Level {level}");
+        }
+        else // 5% EXPERT
+        {
+            cfg.fakeChance = 80f; // Chaos!
+            cfg.targetMatches = 10 + (level / 2);
+            Debug.Log($"[Spawner] Generated EXPERT Level {level}");
+        }
+
+        // Always allow all types for procedural (or unlock gradually)
+        cfg.spawns = new List<SpawnEntry>
+        {
+            new SpawnEntry { prefab = cubePrefab, count = 100 }, // Dummy infinite counts
+            new SpawnEntry { prefab = spherePrefab, count = 100 }
+        };
+
+        return cfg;
     }
 
     public void StartLevel(int level)
     {
         currentLevel = Mathf.Max(1, level);
-
-        // level başında merkez boş
         currentCenterPiece = null;
-
-        BuildBagForLevel(currentLevel);
+        
+        // No bag building needed anymore. 
+        // We just use the config to know WHICH pieces are allowed.
+        
         SpawnNextPiece();
     }
 
-    private void BuildBagForLevel(int level)
-    {
-        bag.Clear();
-        bagIndex = 0;
-
-        var cfg = GetLevelConfig(level);
-        if (cfg == null || cfg.spawns == null) return;
-
-        foreach (var entry in cfg.spawns)
-        {
-            if (entry == null || entry.prefab == null) continue;
-            int c = Mathf.Max(0, entry.count);
-            for (int i = 0; i < c; i++)
-                bag.Add(entry.prefab);
-        }
-
-        if (shuffleOrder)
-            Shuffle(bag);
-    }
+    // Removed BuildBagForLevel
 
     public void SpawnNextPiece()
     {
@@ -115,18 +140,13 @@ public class Spawner : MonoBehaviour
         if (currentCenterPiece != null)
             yield break;
 
-        // bag bitti
-        if (bagIndex >= bag.Count)
-        {
-            OnBagEmpty?.Invoke();
-            yield break;
-        }
-
         var cfg = GetLevelConfig(currentLevel);
-        if (cfg == null) yield break;
+        if (cfg == null || cfg.spawns.Count == 0) yield break;
 
-        GameObject prefab = bag[bagIndex];
-        bagIndex++;
+        // INFINITE SPAWN LOGIC:
+        // Pick a random entry from the allowed list
+        var randomEntry = cfg.spawns[UnityEngine.Random.Range(0, cfg.spawns.Count)];
+        GameObject prefab = randomEntry.prefab;
 
         GameObject go = Instantiate(prefab, spawnPoint.position, Quaternion.identity);
 

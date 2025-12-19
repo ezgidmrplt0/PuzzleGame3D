@@ -18,9 +18,7 @@ public class SlotManager : MonoBehaviour
     public static SlotManager Instance { get; private set; }
 
     // LevelManager için eventler
-    public static event Action OnMoveMade;
     public static event Action OnMatch3;
-    public static event Action<int> OnScoreChanged;
 
     [Header("Zone Configuration")]
     [SerializeField] private int maxSlotsPerZone = 3;
@@ -35,16 +33,10 @@ public class SlotManager : MonoBehaviour
     [SerializeField] private float moveDuration = 0.25f;
     [SerializeField] private Ease moveEase = Ease.OutBack;
 
-    [Header("Tap Destroy Limits")]
-    [SerializeField] private int normalDestroyLimit = 3;
-    private int normalDestroyRemaining;
-
     [Header("UI")]
-    [SerializeField] private TMP_Text normalDestroyText;
-
-    [Header("Score")]
-    [SerializeField] private TMP_Text scoreText;
-    private int score;
+    // UI is now handled by LevelManager directly or events
+    // [SerializeField] private TMP_Text normalDestroyText;
+    // [SerializeField] private TMP_Text scoreText;
 
     private bool inputEnabled = true;
 
@@ -57,13 +49,6 @@ public class SlotManager : MonoBehaviour
         else Destroy(gameObject);
 
         InitializeGrid();
-
-        normalDestroyRemaining = normalDestroyLimit;
-        RefreshDestroyUI();
-
-        score = 0;
-        RefreshScoreUI();
-        OnScoreChanged?.Invoke(score);
     }
 
     public void SetInputEnabled(bool enabled) => inputEnabled = enabled;
@@ -95,28 +80,8 @@ public class SlotManager : MonoBehaviour
 
     // ================= UI =================
 
-    private void RefreshDestroyUI()
-    {
-        if (normalDestroyText == null) return;
+    // UI Logic moved to LevelManager / Events
 
-        if (normalDestroyRemaining > 0)
-            normalDestroyText.text = $"Normal Destroy: {normalDestroyRemaining}/{normalDestroyLimit}";
-        else
-            normalDestroyText.text = "NO NORMAL DESTROY LEFT!";
-    }
-
-    private void RefreshScoreUI()
-    {
-        if (scoreText == null) return;
-        scoreText.text = $"Score: {score}";
-    }
-
-    private void AddScore(int amount)
-    {
-        score += amount;
-        RefreshScoreUI();
-        OnScoreChanged?.Invoke(score);
-    }
 
     // ================= RESET (Fail olunca temizle) =================
 
@@ -177,43 +142,35 @@ public class SlotManager : MonoBehaviour
         {
             var sp = FindObjectOfType<Spawner>();
 
-            // Fake: unlimited (move saymıyoruz)
             if (hitPiece.isFake)
             {
-                AddScore(5);
-
+                // CORRECT: Destroy Fake - No penalty
                 if (sp) sp.NotifyCenterCleared(hitPiece);
-
+                centerQueue.Dequeue();
+                Destroy(hitPiece.gameObject);
+                
+                // Bonus/Feedback?
+                Debug.Log("GOOD! Fake destroyed.");
+                
+                if (sp) sp.SpawnNextPiece();
+            }
+            else
+            {
+                // WRONG: Destroyed a valid piece -> PENALTY
+                Debug.Log("BAD! You destroyed a good piece.");
+                if (LevelManager.Instance) LevelManager.Instance.ReduceLife();
+                
+                // Proceed anyway (or block?) - Let's allow but penalize
+                if (sp) sp.NotifyCenterCleared(hitPiece);
                 centerQueue.Dequeue();
                 Destroy(hitPiece.gameObject);
                 if (sp) sp.SpawnNextPiece();
-                return;
             }
-
-            // Normal: limited (move sayıyoruz)
-            if (normalDestroyRemaining <= 0)
-            {
-                Debug.Log("No normal destroy taps remaining!");
-                return;
-            }
-
-            normalDestroyRemaining--;
-            RefreshDestroyUI();
-            AddScore(2);
-
-            OnMoveMade?.Invoke(); // ✅ normal tap destroy = move
-
-            if (sp) sp.NotifyCenterCleared(hitPiece);
-
-            centerQueue.Dequeue();
-            Destroy(hitPiece.gameObject);
-            if (sp) sp.SpawnNextPiece();
         }
         // CASE 2: Frozen slot piece
         else if (hitPiece.isFrozen)
         {
             hitPiece.TakeDamage();
-
             if (hitPiece.freezeHealth <= 0)
             {
                 RemoveFromGrid(hitPiece);
@@ -227,23 +184,33 @@ public class SlotManager : MonoBehaviour
         if (!inputEnabled) return;
 
         if (centerQueue.Count == 0) return;
-        if (IsZoneFull(dir)) return;
+        
+        // MISTAKE 1: Zone Full
+        if (IsZoneFull(dir)) 
+        {
+             Debug.Log("ZONE FULL! Penalty.");
+             if (LevelManager.Instance) LevelManager.Instance.ReduceLife();
+             return;
+        }
 
         FallingPiece piece = centerQueue.Dequeue();
         Transform targetSlot = GetNextSlot(dir);
         if (targetSlot == null) return;
 
         var sp = FindObjectOfType<Spawner>();
-
-        OnMoveMade?.Invoke(); // ✅ swipe = move
         if (sp) sp.NotifyCenterCleared(piece);
 
         piece.TweenToSlot(targetSlot, moveDuration, moveEase, () =>
         {
             RegisterPiece(dir, piece);
 
+            // MISTAKE 2: Placing a Fake
             if (piece.isFake)
+            {
                 piece.SetFrozen(true);
+                Debug.Log("OOPS! Placed a fake -> Penalty.");
+                if (LevelManager.Instance) LevelManager.Instance.ReduceLife();
+            }
         });
 
         if (sp) sp.SpawnNextPiece();
@@ -301,7 +268,7 @@ public class SlotManager : MonoBehaviour
         if (!a.isFrozen && !b.isFrozen && !c.isFrozen &&
             a.pieceType == b.pieceType && b.pieceType == c.pieceType)
         {
-            AddScore(10);
+            // AddScore(10); // Removed as Score is handled differently or ignored for now
             OnMatch3?.Invoke();
 
             list.RemoveRange(list.Count - 3, 3);

@@ -9,39 +9,40 @@ public class LevelManager : MonoBehaviour
 
     [Header("UI")]
     [SerializeField] private TMP_Text levelText;
-    [SerializeField] private TMP_Text timeText;
+    [SerializeField] private TMP_Text livesText; // Changed from timeText
     [SerializeField] private TMP_Text goalText;
-    [SerializeField] private TMP_Text movesText;
     [SerializeField] private TMP_Text stateText;
 
-    [Header("Start")]
+    [Header("Game Design")]
     [SerializeField] private int startLevel = 1;
+    [SerializeField] private int maxLives = 3;
 
     private int currentLevel;
-    private int movesUsed;
+    private int currentLives;
     private int matchesDone;
-
-    private float timeRemaining;
     private int targetMatches;
 
     private bool isRunning;
 
+    // Singleton Reference (Simple for now)
+    public static LevelManager Instance { get; private set; }
+
+    private void Awake()
+    {
+        if (Instance == null) Instance = this;
+        else Destroy(gameObject);
+    }
+
     private void OnEnable()
     {
-        SlotManager.OnMoveMade += HandleMove;
         SlotManager.OnMatch3 += HandleMatch;
-        SlotManager.OnScoreChanged += HandleScore;
-
-        Spawner.OnBagEmpty += HandleBagEmpty;
+        // Spawner.OnBagEmpty += HandleBagEmpty;
     }
 
     private void OnDisable()
     {
-        SlotManager.OnMoveMade -= HandleMove;
         SlotManager.OnMatch3 -= HandleMatch;
-        SlotManager.OnScoreChanged -= HandleScore;
-
-        Spawner.OnBagEmpty -= HandleBagEmpty;
+        // Spawner.OnBagEmpty -= HandleBagEmpty;
     }
 
     private void Start()
@@ -54,40 +55,39 @@ public class LevelManager : MonoBehaviour
 
     private void Update()
     {
+        // No timer update needed
+    }
+
+    public void ReduceLife()
+    {
         if (!isRunning) return;
 
-        timeRemaining -= Time.deltaTime;
-        if (timeRemaining < 0) timeRemaining = 0;
-
+        currentLives--;
         RefreshUI();
 
-        if (timeRemaining <= 0)
-            Lose("TIME UP!");
+        if (currentLives <= 0)
+        {
+            Lose("ALL LIVES LOST!");
+        }
     }
 
     public void StartLevel(int level)
     {
         currentLevel = Mathf.Max(1, level);
-        movesUsed = 0;
+        currentLives = maxLives; // Reset Lives
         matchesDone = 0;
 
         var cfg = spawner.GetLevelConfig(currentLevel);
-        if (cfg == null)
-        {
-            isRunning = false;
-            if (stateText) stateText.text = $"No config for Level {currentLevel}";
-            return;
-        }
-
+        // Config is always returned now (Handmade or Procedural)
+        
         targetMatches = Mathf.Max(1, cfg.targetMatches);
-        timeRemaining = Mathf.Max(1, cfg.timeLimitSeconds);
-
+        
         isRunning = true;
         if (stateText) stateText.text = "";
 
         slotManager.SetInputEnabled(true);
-        slotManager.ResetBoard();          // ✅ her level başında temizle
-        spawner.StartLevel(currentLevel);  // ✅ bag oluştur + ilk parça
+        slotManager.ResetBoard(); 
+        spawner.StartLevel(currentLevel); 
 
         RefreshUI();
     }
@@ -106,10 +106,10 @@ public class LevelManager : MonoBehaviour
         isRunning = false;
         slotManager.SetInputEnabled(false);
 
-        slotManager.ResetBoard(); // ✅ fail anında temizle
+        // slotManager.ResetBoard(); // Keep board visible on lose? User preference. keeping generic behavior.
 
-        if (stateText) stateText.text = $"LEVEL FAILED: {reason}";
-        Invoke(nameof(RetryLevel), 1.0f);
+        if (stateText) stateText.text = $"FAILED: {reason}";
+        Invoke(nameof(RetryLevel), 1.5f);
     }
 
     private void NextLevel()
@@ -122,13 +122,6 @@ public class LevelManager : MonoBehaviour
         StartLevel(currentLevel);
     }
 
-    private void HandleMove()
-    {
-        if (!isRunning) return;
-        movesUsed++;
-        RefreshUI();
-    }
-
     private void HandleMatch()
     {
         if (!isRunning) return;
@@ -139,31 +132,20 @@ public class LevelManager : MonoBehaviour
             Win();
     }
 
-    private void HandleScore(int newScore)
-    {
-        // şimdilik sadece dinliyoruz
-    }
-
+    // No Bag limits anymore
+    /*
     private void HandleBagEmpty()
     {
         if (!isRunning) return;
-
         if (matchesDone < targetMatches)
             Lose("OUT OF PIECES!");
     }
+    */
 
     private void RefreshUI()
     {
         if (levelText) levelText.text = $"Level: {currentLevel}";
-        if (goalText) goalText.text = $"Matches: {matchesDone}/{targetMatches}";
-        if (movesText) movesText.text = $"Moves: {movesUsed}";
-
-        if (timeText)
-        {
-            int t = Mathf.CeilToInt(timeRemaining);
-            int m = t / 60;
-            int s = t % 60;
-            timeText.text = $"Time: {m:00}:{s:00}";
-        }
+        if (goalText) goalText.text = $"Goal: {matchesDone}/{targetMatches}";
+        if (livesText) livesText.text = $"Lives: {currentLives}"; // Hearts can be icons later
     }
 }
