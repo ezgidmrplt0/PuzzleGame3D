@@ -9,7 +9,23 @@ public class FallingPiece : MonoBehaviour
         Object2, 
         Object3, 
         Object4, 
-        Object5 
+        Object5, 
+        Object6,
+        Object7,
+        Object8,
+        Object9,
+        Object10,
+        Object11,
+        Object12,
+        Object13,
+        Object14,
+        Object15,
+        Object16,
+        Object17,
+        Object18,
+        Object19,
+        Object20,
+        ObjectHeart
     }
     
     [Header("Settings")]
@@ -79,6 +95,8 @@ public class FallingPiece : MonoBehaviour
     public void TweenToSlot(Transform targetSlot, float duration, Ease ease, System.Action onComplete = null)
     {
         if (activeTween != null && activeTween.IsActive()) activeTween.Kill();
+        
+        if (rb == null) return;
 
         rb.velocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;

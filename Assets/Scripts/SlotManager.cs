@@ -43,13 +43,22 @@ public class SlotManager : MonoBehaviour
     [SerializeField] private float shuffleMoveDuration = 0.45f;
     [SerializeField] private Ease shuffleEase = Ease.InOutSine;
 
+    [Header("Frozen Slots (Difficulty)")]
+    [SerializeField] private bool enableFrozenSlots = true;
+    [SerializeField] private float freezeInterval = 5f;
+    [SerializeField] private float freezeChance = 0.4f;
+
     private bool inputEnabled = true;
     private bool isShuffling = false;
     private Coroutine shuffleRoutine;
+    private Coroutine freezeRoutine;
 
     // State Management: Dictionary instead of Hierarchy-walking
     private Dictionary<Direction, List<FallingPiece>> grid;
     private Queue<FallingPiece> centerQueue = new Queue<FallingPiece>();
+
+    // Refactor: Track frozen slots internally
+    private Dictionary<Transform, Color> frozenSlots = new Dictionary<Transform, Color>();
 
     private readonly Direction[] dirs = new Direction[]
     {
@@ -84,6 +93,7 @@ public class SlotManager : MonoBehaviour
         SwipeInput.OnTap += OnTap;
 
         StartShuffleRoutineIfNeeded();
+        StartFreezeRoutineIfNeeded();
     }
 
     private void OnDisable()
@@ -93,9 +103,98 @@ public class SlotManager : MonoBehaviour
         SwipeInput.OnTap -= OnTap;
 
         StopShuffleRoutine();
+        StopFreezeRoutine();
     }
 
     // ================= SHUFFLE LOOP =================
+
+    // ================= SHUFFLE & FREEZE LOOPS =================
+
+    private void StartFreezeRoutineIfNeeded()
+    {
+        if (!enableFrozenSlots) return;
+        if (freezeRoutine != null) StopCoroutine(freezeRoutine);
+        freezeRoutine = StartCoroutine(FrozenSlotLoop());
+    }
+
+    private void StopFreezeRoutine()
+    {
+        if (freezeRoutine != null)
+        {
+            StopCoroutine(freezeRoutine);
+            freezeRoutine = null;
+        }
+    }
+
+    private System.Collections.IEnumerator FrozenSlotLoop()
+    {
+        while (enableFrozenSlots)
+        {
+            yield return new WaitForSeconds(freezeInterval);
+
+            if (UnityEngine.Random.value < freezeChance && !isShuffling && inputEnabled)
+            {
+                TryFreezeRandomSlot();
+            }
+        }
+    }
+
+    private void TryFreezeRandomSlot()
+    {
+        // Pick random dir
+        Direction d = dirs[UnityEngine.Random.Range(0, dirs.Length)];
+        Transform origin = GetOrigin(d);
+        if (!origin || origin.childCount == 0) return;
+
+        // Pick random slot
+        int randIdx = UnityEngine.Random.Range(0, origin.childCount);
+        Transform slotTr = origin.GetChild(randIdx);
+        
+        // Only freeze if NO piece is there (optional, or freeze piece too? Req said "slot freezes")
+        // User said "empty slot will Freeze".
+        // Check if occupied:
+        bool occupied = false;
+        foreach(var p in grid[d])
+        {
+            if (p.transform.parent == slotTr) 
+            {
+                occupied = true;
+                break;
+            }
+        }
+
+        if (!occupied)
+        {
+            FreezeSlot(slotTr);
+        }
+    }
+
+    private void FreezeSlot(Transform slot)
+    {
+        if (frozenSlots.ContainsKey(slot)) return;
+
+        var rend = slot.GetComponent<Renderer>();
+        if (rend)
+        {
+            frozenSlots[slot] = rend.material.color; // Save original
+            rend.material.DOColor(Color.cyan, 0.3f);
+            slot.DOShakeScale(0.3f, 0.2f);
+        }
+    }
+
+    private void UnfreezeSlot(Transform slot)
+    {
+        if (!frozenSlots.ContainsKey(slot)) return;
+
+        var rend = slot.GetComponent<Renderer>();
+        if (rend)
+        {
+            rend.material.DOColor(frozenSlots[slot], 0.3f); // Restore original
+        }
+        
+        frozenSlots.Remove(slot);
+        slot.DOShakeRotation(0.2f, 15f);
+    }
 
     private void StartShuffleRoutineIfNeeded()
     {
@@ -229,6 +328,7 @@ public class SlotManager : MonoBehaviour
         
         // Clear Logical Grid
         foreach (var kv in grid) kv.Value.Clear();
+        frozenSlots.Clear(); // FIX: Clear frozen slots on rebuild
 
         GenerateSlotsForZone(Direction.Up, slotsPerZone);
         GenerateSlotsForZone(Direction.Down, slotsPerZone);
@@ -287,6 +387,7 @@ public class SlotManager : MonoBehaviour
             foreach(var p in kv.Value) if(p) Destroy(p.gameObject);
             kv.Value.Clear();
         }
+        frozenSlots.Clear(); // FIX: Clear frozen slots on reset
     }
 
     // ================= GAMEPLAY EVENTS =================
@@ -353,8 +454,16 @@ public class SlotManager : MonoBehaviour
 
     private void OnSwipe(Direction dir)
     {
-        if (!inputEnabled || isShuffling) return;
-        if (centerQueue.Count == 0) return;
+        if (!inputEnabled || isShuffling) 
+        {
+            Debug.Log($"[OnSwipe] Ignored: InputEnabled={inputEnabled}, IsShuffling={isShuffling}");
+            return;
+        }
+        if (centerQueue.Count == 0)
+        {
+            Debug.Log("[OnSwipe] Ignored: Center Queue Empty");
+            return;
+        }
 
         // Check if Zone Full
         Transform origin = GetOrigin(dir);
@@ -372,6 +481,75 @@ public class SlotManager : MonoBehaviour
         // Target is next available slot
         int targetIndex = grid[dir].Count;
         Transform targetSlot = origin.GetChild(targetIndex);
+
+        // Check if target is Frozen
+        if (frozenSlots.ContainsKey(targetSlot))
+        {
+             // Break Ice!
+             
+             // Move to target partially then return
+             piece.transform.DOMove(targetSlot.position, moveDuration * 0.6f).SetEase(Ease.OutQuad).OnComplete(() =>
+             {
+                 // HIT
+                 UnfreezeSlot(targetSlot);
+                 piece.TakeDamage(); // Visual shake on piece too
+                 
+                 // Return to center (approx) or just destroy? 
+                 // User said "returns to center".
+                 // Actually pieces come from center queue.
+                 // We should put it back in queue? Or just let it sit in center?
+                 // Current logic dequeues immediately.
+                 // Let's just animate it back to center position.
+                 
+                 piece.transform.DOMove(Vector3.zero, moveDuration * 0.6f).SetEase(Ease.OutQuad).OnComplete(() =>
+                 {
+                     // Re-enqueue? The center queue logic is simple queue. 
+                     // It might be complicated to re-insert at front.
+                     // Simplest: Just destroy it (wasted throw) or Put back in front of queue
+                     
+                     // If we destroy it, player loses the piece.
+                     // "waste a throw" implies losing piece usually.
+                     // But user said "returns to the center".
+                     // Let's re-enqueue it at the Front if possible, or just add to queue end.
+                     // Queue doesn't support PushFront.
+                     
+                     // Let's just "Return to center" visually and effectively Re-Queue it by not registering in grid.
+                     // We need to re-add to queue.
+                     
+                     // Actually, if we want to simulate "waste time", keeping the piece is better.
+                     // But if we want to "waste resource", destroying is better.
+                     // User said "waste a throw", usually means ammo loss.
+                     // BUT "returns to center" implies it comes back.
+                     // Let's keep it.
+                     
+                     // Re-enqueue
+                     centerQueue.Enqueue(piece);
+                     
+                     // Reset pos
+                     piece.transform.position = Vector3.zero;
+                     
+                     // If spawner waiting, it might spawn another on top?
+                     // Spawner checks 'currentCenterPiece'.
+                     // We dequeued it, so Spawner thinks it's gone?
+                     // Spawner: NotifyCenterCleared is called when executed.
+                     // In OnSwipe, we call NotifyCenterCleared immediately.
+                     // So Spawner spawned a NEW one already?
+                     // If so, we have collision.
+                     
+                     // Let's look at OnSwipe Start:
+                     // sp.NotifyCenterCleared(piece); -> This frees spawner.
+                     // sp.SpawnNextPiece(); -> This spawns new one.
+                     
+                     // So if we return, we clash with new spawn.
+                     // Solution: DESTROY the piece. "Wasted throw".
+                     // Animation: Hit -> Break -> Destroy.
+                     Destroy(piece.gameObject);
+                 });
+             });
+             
+             if (sp) sp.SpawnNextPiece();
+             return; 
+        }
 
         piece.TweenToSlot(targetSlot, moveDuration, moveEase, () =>
         {
@@ -471,6 +649,7 @@ public class SlotManager : MonoBehaviour
         }
 
         // MATCH!
+        Debug.Log($"[CheckMatch3] MATCHED! Type: {targetType}. Items: {list[0].pieceType}, {list[1].pieceType}, {list[2].pieceType}");
         OnMatch3?.Invoke();
 
         // Destroy all

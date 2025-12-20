@@ -229,7 +229,7 @@ public class Spawner : MonoBehaviour
 
         if (prefab == null) yield break;
 
-        GameObject go = Instantiate(prefab, spawnPoint.position, Quaternion.identity);
+        GameObject go = Instantiate(prefab, spawnPoint.position, Quaternion.Euler(90, 0, 90));
 
         Rigidbody rb = go.GetComponent<Rigidbody>();
         if (!rb) rb = go.AddComponent<Rigidbody>();

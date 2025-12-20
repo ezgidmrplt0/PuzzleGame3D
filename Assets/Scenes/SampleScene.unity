@@ -1374,15 +1374,22 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   spawnPoint: {fileID: 687155734}
   availablePieces:
-  - {fileID: 5269077711324498485, guid: 8bae444e037697149ad454b95c6d518e, type: 3}
-  - {fileID: 5269077711324498485, guid: 5a43ad8fb52315aef9c60e6437a9cae6, type: 3}
-  - {fileID: 5269077711324498485, guid: 0c83e4a6ea17c7b22a8964596898a4d0, type: 3}
+  - {fileID: 1271514185895907263, guid: 8549b4f9e333e4598b9b8e18ebd58616, type: 3}
+  - {fileID: 8177182107534067933, guid: 616b0ac88803ee5f6b2a689508dbc612, type: 3}
+  - {fileID: 6021238023345708088, guid: a2e447f06af3132c29fe060a4763ea59, type: 3}
+  - {fileID: 9179438403283698033, guid: 36cdfa1057db740f782b1e18d53ef459, type: 3}
+  - {fileID: 294181474143244675, guid: cd96cfa275f6764349ef6248060c5aa6, type: 3}
+  - {fileID: 7537527667387891100, guid: 12234e84c70fbd183a6818b060c1d219, type: 3}
+  - {fileID: 1460541476447158098, guid: c90014afb9042927792fd10981c0e856, type: 3}
+  - {fileID: 7803668791235217594, guid: edf63393fb82415428238954273ee4d6, type: 3}
+  - {fileID: 7678321992358793105, guid: 63a4b0747d5f78d4abd9d5ea4573ea18, type: 3}
+  - {fileID: 677173119059346621, guid: d3506537af39cedf59fc5468edfef5e9, type: 3}
   levels:
   - targetMatches: 3
     timeLimitSeconds: 60
     fakeChance: 20
     pieceTypeCount: 2
-    slotsPerZone: 4
+    slotsPerZone: 3
     spawns: []
   currentLevel: 1
 --- !u!4 &687155734
@@ -3380,6 +3387,9 @@ MonoBehaviour:
   shuffleInterval: 10
   shuffleMoveDuration: 0.45
   shuffleEase: 4
+  enableFrozenSlots: 1
+  freezeInterval: 5
+  freezeChance: 0.4
 --- !u!4 &1669411851
 Transform:
   m_ObjectHideFlags: 0
