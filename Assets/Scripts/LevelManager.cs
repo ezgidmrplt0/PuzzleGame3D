@@ -14,6 +14,13 @@ public class LevelManager : MonoBehaviour
     [SerializeField] private TMP_Text goalText;      // istersen boş bırak
     [SerializeField] private TMP_Text stateText;
 
+    [Header("Camera Settings")]
+    [SerializeField] private Camera mainCamera;
+    [SerializeField] private float baseFOV = 60f; // Base FOV for minimal grid
+    [SerializeField] private float zoomOutPerSlot = 5f; // How much to zoom out per extra slot
+    [SerializeField] private float sidePadding = 1.0f; // Extra padding
+
+
     [Header("UI - Buttons")]
     [Tooltip("Pause/Resume butonu")]
     [SerializeField] private Button pauseButton;
@@ -186,6 +193,14 @@ public class LevelManager : MonoBehaviour
         if (stateText) stateText.text = "";
 
         slotManager.SetInputEnabled(true);
+        
+        // GRID GENERATION (Based on Level Config)
+        if (slotManager)
+        {
+            slotManager.SetupGrid(cfg.slotsPerZone);
+            UpdateCamera(cfg.slotsPerZone); // Adjust camera to fit new grid
+        }
+
         slotManager.ResetBoard();
         spawner.StartLevel(currentLevel);
 
@@ -278,5 +293,56 @@ public class LevelManager : MonoBehaviour
         int min = t / 60;
         int sec = t % 60;
         timerText.text = $"{min:00}:{sec:00}";
+    }
+
+    private void UpdateCamera(int slotsPerZone)
+    {
+        if (!mainCamera) mainCamera = Camera.main;
+        if (!mainCamera) return;
+
+        // New Layout: "Walls" around the center.
+        // We need to fit the bounds of these walls.
+        // Assume default values from SlotManager (approximate if not accessible)
+        float startDist = 2.2f; 
+        float spacing = 1.6f;
+        
+        // Calculate the "Spread" half-width of a wall
+        // e.g. 3 slots -> 1.5 * spacing total width -> 0.75 * spacing half width? No.
+        // (Count-1) * spacing is total distance between centers of first and last.
+        // Half of that is extent from center. + Radius (0.5).
+        float wallHalfLength = ((slotsPerZone - 1) * spacing * 0.5f) + 0.8f; // 0.8 is approx radius/padding
+
+        // Bounds X: Max of "Left/Right Wall Distance" OR "Top/Bottom Wall Width"
+        float boundX = Mathf.Max(startDist + 0.8f, wallHalfLength);
+        
+        // Bounds Z (Height): Max of "Top/Bottom Wall Distance" OR "Left/Right Wall Height"
+        float boundZ = Mathf.Max(startDist + 0.8f, wallHalfLength);
+
+        float maxExtent = Mathf.Max(boundX, boundZ); 
+        maxExtent += sidePadding;
+
+        if (mainCamera.orthographic)
+        {
+            float aspect = mainCamera.aspect;
+            float requiredHeight = maxExtent / aspect; // If width is the limiter
+            mainCamera.orthographicSize = Mathf.Max(maxExtent, requiredHeight);
+        }
+        else
+        {
+            // Reset to base and add zoom
+            // Heuristic approaches for perspective are tricky without exact distance.
+            // Let's rely on a linear scale factor that feels right.
+            // If slotsPerZone increases, the "Wall Width" increases.
+            
+            float extraZoom = (slotsPerZone - 1) * 2.5f; // reduced multiplier since walls grow sideways
+            
+            mainCamera.fieldOfView = baseFOV + extraZoom;
+            
+            float aspect = mainCamera.aspect;
+            if (aspect < 1.0f) 
+            {
+                mainCamera.fieldOfView += (1.0f / aspect) * 3f; 
+            }
+        }
     }
 }

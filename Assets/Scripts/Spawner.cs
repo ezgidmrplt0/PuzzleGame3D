@@ -22,7 +22,7 @@ public class Spawner : MonoBehaviour
     [SerializeField] private int currentLevel = 1;
 
     [Header("Spawn Timing")]
-    [SerializeField] private bool spawnOnStart = false; 
+ 
     
     private FallingPiece currentCenterPiece;
     private LevelConfig currentLevelConfig; // CACHED CONFIG
@@ -39,25 +39,23 @@ public class Spawner : MonoBehaviour
         [Tooltip("Bu levelde kaç farklı obje türü olacak? (Örn: 2 seçerseniz Küp ve Küre gelir)")]
         [Range(2, 6)] public int pieceTypeCount = 2;
 
+        [Header("Grid Yapısı")]
+        [Tooltip("Her yönde (Yukarı, Aşağı, Sağ, Sol) kaç slot olacak?")]
+        [Range(1, 4)] public int slotsPerZone = 1;
+
         // Auto-filled at runtime from pool. User doesn't need to touch this.
         [HideInInspector] 
         public List<SpawnEntry> spawns = new List<SpawnEntry>();
     }
 
-    [Serializable] // Needed for internal use (and potentially inspector if valid)
+    [Serializable]
     public class SpawnEntry
     {
         public GameObject prefab;
         public int count = 1;
     }
 
-    // ... (Classes omitted) ...
-
-    private void Start()
-    {
-        if (spawnOnStart)
-            StartLevel(1);
-    }
+    // ...
 
     // Public API: Get existing config or create new one (Ensures consistency)
     public LevelConfig GetLevelConfig(int level)
@@ -91,6 +89,7 @@ public class Spawner : MonoBehaviour
                 cfg.timeLimitSeconds = preset.timeLimitSeconds;
                 cfg.fakeChance = preset.fakeChance;
                 cfg.pieceTypeCount = preset.pieceTypeCount; 
+                cfg.slotsPerZone = preset.slotsPerZone; // Copy slots count
             }
         }
 
@@ -98,6 +97,15 @@ public class Spawner : MonoBehaviour
         if (cfg == null)
         {
             cfg = GenerateProceduralDifficulty(level);
+
+            // FIX: Override Slots Per Zone to match the LAST hand-crafted level
+            // This prevents the game from suddenly switching to 1 slot if the user designed a 3-slot game.
+            if (levels != null && levels.Count > 0)
+            {
+                var lastPreset = levels[levels.Count - 1];
+                cfg.slotsPerZone = lastPreset.slotsPerZone;
+                // We could also copy other things here if desired, but user specifically asked about the "type" (structure).
+            }
         }
 
         // 3. AUTO-POPULATE PIECES
@@ -112,6 +120,9 @@ public class Spawner : MonoBehaviour
         
         float roll = UnityEngine.Random.value; 
 
+        // Note: slotsPerZone is now overridden above, so these assignments below 
+        // form a "default fallback" if NO levels are defined in inspector.
+
         if (roll < 0.50f) 
         {
             // EASY
@@ -119,6 +130,7 @@ public class Spawner : MonoBehaviour
             cfg.targetMatches = 3 + (level / 5); 
             cfg.timeLimitSeconds = 45 + (level / 2);
             cfg.pieceTypeCount = 2;
+            cfg.slotsPerZone = 1; 
         }
         else if (roll < 0.80f) 
         {
@@ -127,6 +139,7 @@ public class Spawner : MonoBehaviour
             cfg.targetMatches = 5 + (level / 4);
             cfg.timeLimitSeconds = 40 + (level / 3);
             cfg.pieceTypeCount = 3;
+            cfg.slotsPerZone = 2; 
         }
         else if (roll < 0.95f) 
         {
@@ -135,6 +148,7 @@ public class Spawner : MonoBehaviour
             cfg.targetMatches = 8 + (level / 3);
             cfg.timeLimitSeconds = 35 + (level / 3);
             cfg.pieceTypeCount = 4;
+            cfg.slotsPerZone = 2; 
         }
         else 
         {
@@ -143,6 +157,7 @@ public class Spawner : MonoBehaviour
             cfg.targetMatches = 10 + (level / 2);
             cfg.timeLimitSeconds = 30 + (level / 4);
             cfg.pieceTypeCount = 5;
+            cfg.slotsPerZone = 3; 
         }
 
         return cfg;
