@@ -10,16 +10,15 @@ public class LevelManager : MonoBehaviour
 
     [Header("UI - Text")]
     [SerializeField] private TMP_Text levelText;
-    [SerializeField] private TMP_Text timerText;     // sağ üstte göstermek için (boş kalabilir)
-    [SerializeField] private TMP_Text goalText;      // istersen boş bırak
+    [SerializeField] private TMP_Text timerText;
+    [SerializeField] private TMP_Text goalText;
     [SerializeField] private TMP_Text stateText;
 
     [Header("Camera Settings")]
     [SerializeField] private Camera mainCamera;
-    [SerializeField] private float baseFOV = 60f; // Base FOV for minimal grid
-    [SerializeField] private float zoomOutPerSlot = 5f; // How much to zoom out per extra slot
-    [SerializeField] private float sidePadding = 1.0f; // Extra padding
-
+    [SerializeField] private float baseFOV = 60f;
+    [SerializeField] private float zoomOutPerSlot = 5f;
+    [SerializeField] private float sidePadding = 1.0f;
 
     [Header("UI - Buttons")]
     [Tooltip("Pause/Resume butonu")]
@@ -39,12 +38,14 @@ public class LevelManager : MonoBehaviour
     [SerializeField] private int startLevel = 1;
     [SerializeField] private int maxLives = 3;
 
+    [Header("Timer Rule")]
+    [SerializeField] private int fixedLevelSeconds = 30;
+
     private int currentLevel;
     private int currentLives;
     private int matchesDone;
     private int targetMatches;
 
-    // Timer
     private float timeLeft;
     private bool useTimer;
 
@@ -58,7 +59,6 @@ public class LevelManager : MonoBehaviour
         if (Instance == null) Instance = this;
         else Destroy(gameObject);
 
-        // güvenlik: editörde timeScale yanlışlıkla 0 kalmasın
         Time.timeScale = 1f;
     }
 
@@ -77,7 +77,6 @@ public class LevelManager : MonoBehaviour
         if (pauseButton) pauseButton.onClick.RemoveListener(TogglePause);
         if (restartButton) restartButton.onClick.RemoveListener(RestartLevel);
 
-        // sahneden çıkarken timeScale açık kalsın
         Time.timeScale = 1f;
     }
 
@@ -119,7 +118,6 @@ public class LevelManager : MonoBehaviour
 
         if (isPaused)
         {
-            // oyun dursun
             Time.timeScale = 0f;
             slotManager.SetInputEnabled(false);
             if (stateText) stateText.text = "PAUSED";
@@ -127,7 +125,6 @@ public class LevelManager : MonoBehaviour
         }
         else
         {
-            // devam
             Time.timeScale = 1f;
             slotManager.SetInputEnabled(true);
             if (stateText) stateText.text = "";
@@ -137,7 +134,6 @@ public class LevelManager : MonoBehaviour
 
     public void RestartLevel()
     {
-        // restart basınca pause varsa kaldır
         if (isPaused)
         {
             isPaused = false;
@@ -151,8 +147,6 @@ public class LevelManager : MonoBehaviour
     private void SetPauseLabel(bool paused)
     {
         if (!pauseButtonLabel) return;
-
-        // İstersen ikon gibi kullan: paused -> "▶", normal -> "❚❚"
         pauseButtonLabel.text = paused ? "▶" : "❚❚";
     }
 
@@ -173,7 +167,6 @@ public class LevelManager : MonoBehaviour
 
     public void StartLevel(int level)
     {
-        // level başında her şeyi resetle
         Time.timeScale = 1f;
         isPaused = false;
         SetPauseLabel(false);
@@ -185,20 +178,19 @@ public class LevelManager : MonoBehaviour
         var cfg = spawner.GetLevelConfig(currentLevel);
         targetMatches = Mathf.Max(1, cfg.targetMatches);
 
-        int limit = Mathf.Max(0, cfg.timeLimitSeconds);
-        useTimer = limit > 0;
+        int limit = Mathf.Max(1, fixedLevelSeconds);
+        useTimer = true;
         timeLeft = limit;
 
         isRunning = true;
         if (stateText) stateText.text = "";
 
         slotManager.SetInputEnabled(true);
-        
-        // GRID GENERATION (Based on Level Config)
+
         if (slotManager)
         {
             slotManager.SetupGrid(cfg.slotsPerZone);
-            UpdateCamera(cfg.slotsPerZone); // Adjust camera to fit new grid
+            UpdateCamera(cfg.slotsPerZone);
         }
 
         slotManager.ResetBoard();
@@ -300,48 +292,33 @@ public class LevelManager : MonoBehaviour
         if (!mainCamera) mainCamera = Camera.main;
         if (!mainCamera) return;
 
-        // New Layout: "Walls" around the center.
-        // We need to fit the bounds of these walls.
-        // Assume default values from SlotManager (approximate if not accessible)
-        float startDist = 2.2f; 
+        float startDist = 2.2f;
         float spacing = 1.6f;
-        
-        // Calculate the "Spread" half-width of a wall
-        // e.g. 3 slots -> 1.5 * spacing total width -> 0.75 * spacing half width? No.
-        // (Count-1) * spacing is total distance between centers of first and last.
-        // Half of that is extent from center. + Radius (0.5).
-        float wallHalfLength = ((slotsPerZone - 1) * spacing * 0.5f) + 0.8f; // 0.8 is approx radius/padding
 
-        // Bounds X: Max of "Left/Right Wall Distance" OR "Top/Bottom Wall Width"
+        float wallHalfLength = ((slotsPerZone - 1) * spacing * 0.5f) + 0.8f;
+
         float boundX = Mathf.Max(startDist + 0.8f, wallHalfLength);
-        
-        // Bounds Z (Height): Max of "Top/Bottom Wall Distance" OR "Left/Right Wall Height"
         float boundZ = Mathf.Max(startDist + 0.8f, wallHalfLength);
 
-        float maxExtent = Mathf.Max(boundX, boundZ); 
+        float maxExtent = Mathf.Max(boundX, boundZ);
         maxExtent += sidePadding;
 
         if (mainCamera.orthographic)
         {
             float aspect = mainCamera.aspect;
-            float requiredHeight = maxExtent / aspect; // If width is the limiter
+            float requiredHeight = maxExtent / aspect;
             mainCamera.orthographicSize = Mathf.Max(maxExtent, requiredHeight);
         }
         else
         {
-            // Reset to base and add zoom
-            // Heuristic approaches for perspective are tricky without exact distance.
-            // Let's rely on a linear scale factor that feels right.
-            // If slotsPerZone increases, the "Wall Width" increases.
-            
-            float extraZoom = (slotsPerZone - 1) * 2.5f; // reduced multiplier since walls grow sideways
-            
+            float extraZoom = (slotsPerZone - 1) * 2.5f;
+
             mainCamera.fieldOfView = baseFOV + extraZoom;
-            
+
             float aspect = mainCamera.aspect;
-            if (aspect < 1.0f) 
+            if (aspect < 1.0f)
             {
-                mainCamera.fieldOfView += (1.0f / aspect) * 3f; 
+                mainCamera.fieldOfView += (1.0f / aspect) * 3f;
             }
         }
     }

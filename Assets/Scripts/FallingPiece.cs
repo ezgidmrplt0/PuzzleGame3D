@@ -1,45 +1,28 @@
-using UnityEngine;
+﻿using UnityEngine;
 using DG.Tweening;
 
 public class FallingPiece : MonoBehaviour
 {
-    public enum Type 
-    { 
-        Object1, 
-        Object2, 
-        Object3, 
-        Object4, 
-        Object5, 
-        Object6,
-        Object7,
-        Object8,
-        Object9,
-        Object10,
-        Object11,
-        Object12,
-        Object13,
-        Object14,
-        Object15,
-        Object16,
-        Object17,
-        Object18,
-        Object19,
-        Object20,
-        ObjectHeart
-    }
-    
-    [Header("Settings")]
-    public Type pieceType; // Set this in Prefab!
-
     public bool isFake { get; private set; }
     public bool isFrozen { get; private set; }
     public int freezeHealth { get; private set; } = 3;
 
-    [Header("Visuals")]
-    [SerializeField] private Texture faceTexture; // Drag your image here
+    [Header("Normal Visuals")]
+    [Tooltip("Normal durumdayken uygulanacak texture (opsiyonel).")]
+    [SerializeField] private Texture faceTexture;   // normal texture (optional)
+
+    [Header("Frozen Visuals")]
+    [SerializeField] private Texture iceTexture;
+    [SerializeField] private Color iceColor = Color.cyan;
+
+    [Header("Fake Visuals")]
+    [SerializeField] private Texture fakeTexture;
+    [SerializeField] private Color fakeColor = Color.white;
 
     private MeshRenderer meshRenderer;
-    private Color originalColor;
+
+    private Color normalColor = Color.white;        // <<< MATCH3 bununla yapılır
+    private Texture normalTexture = null;
 
     private Rigidbody rb;
     private Collider col;
@@ -52,37 +35,66 @@ public class FallingPiece : MonoBehaviour
 
         col = GetComponent<Collider>();
         meshRenderer = GetComponent<MeshRenderer>();
-        if (meshRenderer) 
+
+        if (meshRenderer)
         {
-            originalColor = meshRenderer.material.color;
-            
-            // Apply Texture if assigned
             if (faceTexture != null)
-            {
                 meshRenderer.material.mainTexture = faceTexture;
-            }
+
+            normalTexture = meshRenderer.material.mainTexture;
         }
+
+        RefreshVisualState();
     }
+
+    public void SetNormalColor(Color c)
+    {
+        normalColor = c;
+        RefreshVisualState();
+    }
+
+    public Color GetNormalColor() => normalColor;
 
     public void SetFake(bool fake)
     {
         isFake = fake;
-        if (meshRenderer)
-            meshRenderer.material.color = fake ? Color.black : originalColor;
+        RefreshVisualState();
     }
 
     public void SetFrozen(bool frozen)
     {
         isFrozen = frozen;
-        if (frozen)
+        if (frozen) freezeHealth = 3;
+        RefreshVisualState();
+    }
+
+    private void RefreshVisualState()
+    {
+        if (!meshRenderer) return;
+
+        // Priority: Frozen > Fake > Normal
+        if (isFrozen)
         {
-            freezeHealth = 3;
-            if (meshRenderer) meshRenderer.material.color = Color.cyan;
+            meshRenderer.material.color = iceColor;
+
+            if (iceTexture != null)
+                meshRenderer.material.mainTexture = iceTexture;
+            else
+                meshRenderer.material.mainTexture = normalTexture;
+        }
+        else if (isFake)
+        {
+            meshRenderer.material.color = fakeColor;
+
+            if (fakeTexture != null)
+                meshRenderer.material.mainTexture = fakeTexture;
+            else
+                meshRenderer.material.mainTexture = normalTexture;
         }
         else
         {
-            if (meshRenderer)
-                meshRenderer.material.color = isFake ? Color.black : originalColor;
+            meshRenderer.material.color = normalColor;
+            meshRenderer.material.mainTexture = normalTexture;
         }
     }
 
@@ -95,7 +107,6 @@ public class FallingPiece : MonoBehaviour
     public void TweenToSlot(Transform targetSlot, float duration, Ease ease, System.Action onComplete = null)
     {
         if (activeTween != null && activeTween.IsActive()) activeTween.Kill();
-        
         if (rb == null) return;
 
         rb.velocity = Vector3.zero;

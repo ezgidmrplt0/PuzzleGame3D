@@ -1374,16 +1374,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   spawnPoint: {fileID: 687155734}
   availablePieces:
-  - {fileID: 1271514185895907263, guid: 8549b4f9e333e4598b9b8e18ebd58616, type: 3}
-  - {fileID: 8177182107534067933, guid: 616b0ac88803ee5f6b2a689508dbc612, type: 3}
-  - {fileID: 6021238023345708088, guid: a2e447f06af3132c29fe060a4763ea59, type: 3}
-  - {fileID: 9179438403283698033, guid: 36cdfa1057db740f782b1e18d53ef459, type: 3}
-  - {fileID: 294181474143244675, guid: cd96cfa275f6764349ef6248060c5aa6, type: 3}
-  - {fileID: 7537527667387891100, guid: 12234e84c70fbd183a6818b060c1d219, type: 3}
-  - {fileID: 1460541476447158098, guid: c90014afb9042927792fd10981c0e856, type: 3}
-  - {fileID: 7803668791235217594, guid: edf63393fb82415428238954273ee4d6, type: 3}
-  - {fileID: 7678321992358793105, guid: 63a4b0747d5f78d4abd9d5ea4573ea18, type: 3}
-  - {fileID: 677173119059346621, guid: d3506537af39cedf59fc5468edfef5e9, type: 3}
+  - {fileID: 4173605606977636357, guid: 87cd26bf460fc5246914da68efaa2571, type: 3}
   levels:
   - targetMatches: 3
     timeLimitSeconds: 60
@@ -1391,6 +1382,13 @@ MonoBehaviour:
     pieceTypeCount: 2
     slotsPerZone: 3
     spawns: []
+  colorPalette:
+  - {r: 1, g: 0, b: 0, a: 1}
+  - {r: 0, g: 1, b: 0, a: 1}
+  - {r: 0, g: 0, b: 1, a: 1}
+  - {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  - {r: 1, g: 0.2, b: 1, a: 1}
+  - {r: 0, g: 1, b: 1, a: 1}
   currentLevel: 1
 --- !u!4 &687155734
 Transform:
@@ -2022,7 +2020,7 @@ MonoBehaviour:
   timerText: {fileID: 1385633408}
   goalText: {fileID: 220172962}
   stateText: {fileID: 998459254}
-  mainCamera: {fileID: 0}
+  mainCamera: {fileID: 963194227}
   baseFOV: 60
   zoomOutPerSlot: 5
   sidePadding: 1
@@ -2039,6 +2037,7 @@ MonoBehaviour:
   - {fileID: 546152623}
   startLevel: 1
   maxLives: 3
+  fixedLevelSeconds: 30
 --- !u!4 &961691102
 Transform:
   m_ObjectHideFlags: 0
@@ -3390,6 +3389,16 @@ MonoBehaviour:
   enableFrozenSlots: 1
   freezeInterval: 5
   freezeChance: 0.4
+  iceSlotTexture: {fileID: 2800000, guid: 1e3265dabbfa84681880c251ad48fc70, type: 3}
+  iceSlotColor: {r: 0, g: 1, b: 1, a: 1}
+  enableIdleWiggle: 1
+  idleDelay: 6
+  idleCheckInterval: 0.25
+  slotWiggleStrength: 0.08
+  slotWiggleDuration: 1
+  pieceWiggleStrength: 0.05
+  pieceWiggleDuration: 1.1
+  wigglePiecesToo: 1
 --- !u!4 &1669411851
 Transform:
   m_ObjectHideFlags: 0

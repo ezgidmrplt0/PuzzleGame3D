@@ -19,9 +19,6 @@ public class SlotManager : MonoBehaviour
 
     public static event Action OnMatch3;
 
-    [Header("Zone Configuration")]
-    // NOTE: Controlled by Spawner now, but we keep track of limit if needed
-    
     [Header("Zone Origins")]
     [SerializeField] private Transform upZoneOrigin;
     [SerializeField] private Transform downZoneOrigin;
@@ -48,22 +45,48 @@ public class SlotManager : MonoBehaviour
     [SerializeField] private float freezeInterval = 5f;
     [SerializeField] private float freezeChance = 0.4f;
 
+    [Header("Ice Slot Look")]
+    [SerializeField] private Texture iceSlotTexture;
+    [SerializeField] private Color iceSlotColor = Color.cyan;
+
+    [Header("Idle Animations (Cosmetic)")]
+    [SerializeField] private bool enableIdleWiggle = true;
+    [SerializeField] private float idleDelay = 6f;
+    [SerializeField] private float idleCheckInterval = 0.25f;
+    [SerializeField] private float slotWiggleStrength = 0.08f;
+    [SerializeField] private float slotWiggleDuration = 1.0f;
+    [SerializeField] private float pieceWiggleStrength = 0.05f;
+    [SerializeField] private float pieceWiggleDuration = 1.1f;
+    [SerializeField] private bool wigglePiecesToo = true;
+
     private bool inputEnabled = true;
     private bool isShuffling = false;
     private Coroutine shuffleRoutine;
     private Coroutine freezeRoutine;
 
-    // State Management: Dictionary instead of Hierarchy-walking
     private Dictionary<Direction, List<FallingPiece>> grid;
     private Queue<FallingPiece> centerQueue = new Queue<FallingPiece>();
 
-    // Refactor: Track frozen slots internally
-    private Dictionary<Transform, Color> frozenSlots = new Dictionary<Transform, Color>();
+    private class SlotVisualState
+    {
+        public Color color;
+        public Texture mainTexture;
+        public SlotVisualState(Color c, Texture t) { color = c; mainTexture = t; }
+    }
+
+    private Dictionary<Transform, SlotVisualState> frozenSlots = new Dictionary<Transform, SlotVisualState>();
 
     private readonly Direction[] dirs = new Direction[]
     {
         Direction.Up, Direction.Down, Direction.Left, Direction.Right
     };
+
+    // Idle state
+    private float lastActivityTime;
+    private Coroutine idleRoutine;
+    private bool idleActive = false;
+    private readonly Dictionary<Transform, Tween> slotIdleTweens = new Dictionary<Transform, Tween>();
+    private readonly Dictionary<FallingPiece, Tween> pieceIdleTweens = new Dictionary<FallingPiece, Tween>();
 
     private void Awake()
     {
@@ -94,6 +117,9 @@ public class SlotManager : MonoBehaviour
 
         StartShuffleRoutineIfNeeded();
         StartFreezeRoutineIfNeeded();
+
+        MarkActivity();
+        StartIdleRoutine();
     }
 
     private void OnDisable()
@@ -104,11 +130,129 @@ public class SlotManager : MonoBehaviour
 
         StopShuffleRoutine();
         StopFreezeRoutine();
+
+        StopIdleRoutine();
+        StopIdleWiggle();
     }
 
-    // ================= SHUFFLE LOOP =================
+    // ================= IDLE WIGGLE =================
 
-    // ================= SHUFFLE & FREEZE LOOPS =================
+    private void MarkActivity()
+    {
+        lastActivityTime = Time.time;
+        if (idleActive) StopIdleWiggle();
+    }
+
+    private void StartIdleRoutine()
+    {
+        if (!enableIdleWiggle) return;
+
+        if (idleRoutine != null)
+            StopCoroutine(idleRoutine);
+
+        idleRoutine = StartCoroutine(IdleLoop());
+    }
+
+    private void StopIdleRoutine()
+    {
+        if (idleRoutine != null)
+        {
+            StopCoroutine(idleRoutine);
+            idleRoutine = null;
+        }
+    }
+
+    private System.Collections.IEnumerator IdleLoop()
+    {
+        while (enableIdleWiggle)
+        {
+            yield return new WaitForSeconds(idleCheckInterval);
+
+            if (!inputEnabled) continue;
+            if (isShuffling) continue;
+
+            float idleTime = Time.time - lastActivityTime;
+            if (!idleActive && idleTime >= idleDelay)
+            {
+                StartIdleWiggle();
+            }
+        }
+    }
+
+    private void StartIdleWiggle()
+    {
+        if (idleActive) return;
+        idleActive = true;
+
+        WiggleSlots(upZoneOrigin);
+        WiggleSlots(downZoneOrigin);
+        WiggleSlots(leftZoneOrigin);
+        WiggleSlots(rightZoneOrigin);
+
+        if (wigglePiecesToo)
+            WiggleAllPieces();
+    }
+
+    private void StopIdleWiggle()
+    {
+        idleActive = false;
+
+        foreach (var kv in slotIdleTweens)
+        {
+            if (kv.Value != null && kv.Value.IsActive())
+                kv.Value.Kill();
+            if (kv.Key) kv.Key.localScale = Vector3.one;
+        }
+        slotIdleTweens.Clear();
+
+        foreach (var kv in pieceIdleTweens)
+        {
+            if (kv.Value != null && kv.Value.IsActive())
+                kv.Value.Kill();
+            if (kv.Key) kv.Key.transform.localScale = Vector3.one;
+        }
+        pieceIdleTweens.Clear();
+    }
+
+    private void WiggleSlots(Transform origin)
+    {
+        if (!origin) return;
+
+        for (int i = 0; i < origin.childCount; i++)
+        {
+            Transform slot = origin.GetChild(i);
+            if (!slot) continue;
+            if (slotIdleTweens.ContainsKey(slot)) continue;
+
+            Tween t = slot.DOScale(Vector3.one * (1f + slotWiggleStrength), slotWiggleDuration * 0.5f)
+                .SetEase(Ease.InOutSine)
+                .SetLoops(-1, LoopType.Yoyo);
+
+            slotIdleTweens[slot] = t;
+        }
+    }
+
+    private void WiggleAllPieces()
+    {
+        foreach (var kv in grid)
+        {
+            var list = kv.Value;
+            for (int i = 0; i < list.Count; i++)
+            {
+                FallingPiece p = list[i];
+                if (!p) continue;
+                if (pieceIdleTweens.ContainsKey(p)) continue;
+
+                Tween t = p.transform.DOScale(Vector3.one * (1f + pieceWiggleStrength), pieceWiggleDuration * 0.5f)
+                    .SetEase(Ease.InOutSine)
+                    .SetLoops(-1, LoopType.Yoyo);
+
+                pieceIdleTweens[p] = t;
+            }
+        }
+    }
+
+    // ================= FREEZE LOOP =================
 
     private void StartFreezeRoutineIfNeeded()
     {
@@ -141,22 +285,18 @@ public class SlotManager : MonoBehaviour
 
     private void TryFreezeRandomSlot()
     {
-        // Pick random dir
         Direction d = dirs[UnityEngine.Random.Range(0, dirs.Length)];
         Transform origin = GetOrigin(d);
         if (!origin || origin.childCount == 0) return;
 
-        // Pick random slot
         int randIdx = UnityEngine.Random.Range(0, origin.childCount);
         Transform slotTr = origin.GetChild(randIdx);
-        
-        // Only freeze if NO piece is there (optional, or freeze piece too? Req said "slot freezes")
-        // User said "empty slot will Freeze".
-        // Check if occupied:
+
+        // Only freeze if empty
         bool occupied = false;
-        foreach(var p in grid[d])
+        foreach (var p in grid[d])
         {
-            if (p.transform.parent == slotTr) 
+            if (p && p.transform.parent == slotTr)
             {
                 occupied = true;
                 break;
@@ -176,10 +316,20 @@ public class SlotManager : MonoBehaviour
         var rend = slot.GetComponent<Renderer>();
         if (rend)
         {
-            frozenSlots[slot] = rend.material.color; // Save original
-            rend.material.DOColor(Color.cyan, 0.3f);
+            frozenSlots[slot] = new SlotVisualState(rend.material.color, rend.material.mainTexture);
+
+            rend.material.DOColor(iceSlotColor, 0.3f);
+            if (iceSlotTexture != null)
+                rend.material.mainTexture = iceSlotTexture;
+
             slot.DOShakeScale(0.3f, 0.2f);
         }
+        else
+        {
+            frozenSlots[slot] = new SlotVisualState(Color.white, null);
+        }
+
+        MarkActivity(); // cosmetic
     }
 
     private void UnfreezeSlot(Transform slot)
@@ -189,12 +339,18 @@ public class SlotManager : MonoBehaviour
         var rend = slot.GetComponent<Renderer>();
         if (rend)
         {
-            rend.material.DOColor(frozenSlots[slot], 0.3f); // Restore original
+            var original = frozenSlots[slot];
+            rend.material.DOColor(original.color, 0.3f);
+            rend.material.mainTexture = original.mainTexture;
         }
-        
+
         frozenSlots.Remove(slot);
         slot.DOShakeRotation(0.2f, 15f);
+
+        MarkActivity(); // cosmetic
     }
+
+    // ================= SHUFFLE LOOP =================
 
     private void StartShuffleRoutineIfNeeded()
     {
@@ -227,32 +383,32 @@ public class SlotManager : MonoBehaviour
         }
     }
 
+    // ✅ Shuffle sırasında slot doluysa başka slota (overlap yok)
     private System.Collections.IEnumerator ShuffleContentsOnce()
     {
         if (isShuffling) yield break;
         if (!upZoneOrigin || !downZoneOrigin || !leftZoneOrigin || !rightZoneOrigin) yield break;
 
-        // Check if board is empty
         int total = 0;
-        foreach(var list in grid.Values) total += list.Count;
+        foreach (var list in grid.Values) total += list.Count;
         if (total == 0) yield break;
 
         isShuffling = true;
         bool prevInput = inputEnabled;
         inputEnabled = false;
 
-        // 1. Random Permutation of Zones
+        MarkActivity();
+
+        // 1) Random Permutation of Zones
         Direction[] fromDirs = (Direction[])dirs.Clone();
         Direction[] toDirs = (Direction[])dirs.Clone();
 
-        // Fisher-Yates
         for (int i = toDirs.Length - 1; i > 0; i--)
         {
             int j = UnityEngine.Random.Range(0, i + 1);
             (toDirs[i], toDirs[j]) = (toDirs[j], toDirs[i]);
         }
 
-        // Ensure movement happens (avoid identity)
         bool anyDiff = false;
         for (int i = 0; i < fromDirs.Length; i++)
         {
@@ -260,11 +416,10 @@ public class SlotManager : MonoBehaviour
         }
         if (!anyDiff)
         {
-            // Simple rotation
             (toDirs[0], toDirs[1], toDirs[2], toDirs[3]) = (toDirs[1], toDirs[2], toDirs[3], toDirs[0]);
         }
 
-        // 2. Create New Grid State
+        // 2) Create New Grid State
         var newGrid = new Dictionary<Direction, List<FallingPiece>>
         {
             { Direction.Up, new List<FallingPiece>() },
@@ -280,63 +435,80 @@ public class SlotManager : MonoBehaviour
             newGrid[to].AddRange(grid[from]);
         }
 
-        // 3. Animate To New Slots
+        // ✅ 3) DETACH ALL PIECES FIRST
+        foreach (var d in dirs)
+        {
+            var list = newGrid[d];
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (!list[i]) continue;
+                list[i].transform.SetParent(null, true);
+            }
+        }
+
+        // ✅ 4) Move only to: NOT frozen + EMPTY slots
         Sequence seq = DOTween.Sequence();
 
         foreach (var d in dirs)
         {
             Transform origin = GetOrigin(d);
-            var list = newGrid[d];
-            int capacity = origin.childCount; // How many slots physically exist
+            if (!origin) continue;
 
-            // Handle overflow if shuffle moves too many items to a small zone? 
-            // Ideally zones are same size, but if not, we must handle it.
-            // For now, assume equal size or simple overflow handling:
-            
-            for (int i = 0; i < list.Count; i++)
+            var list = newGrid[d];
+
+            List<Transform> availableSlots = new List<Transform>();
+            for (int i = 0; i < origin.childCount; i++)
             {
-                 FallingPiece p = list[i];
-                 if (!p) continue;
-                 
-                 // If more items than slots, stack them or just move to last slot?
-                 // Let's cap at capacity to prevent errors, destroy excess? 
-                 // Or just pile them on the last slot.
-                 int slotIdx = Mathf.Min(i, capacity - 1);
-                 Transform targetSlot = origin.GetChild(slotIdx);
-                 
-                 p.transform.SetParent(targetSlot, true);
-                 seq.Join(p.transform.DOMove(targetSlot.position, shuffleMoveDuration).SetEase(shuffleEase));
+                Transform s = origin.GetChild(i);
+                if (!s) continue;
+                if (frozenSlots.ContainsKey(s)) continue;
+                if (s.GetComponentInChildren<FallingPiece>() != null) continue; // ✅ no overlap
+                availableSlots.Add(s);
+            }
+
+            if (availableSlots.Count == 0) continue;
+
+            int moveCount = Mathf.Min(list.Count, availableSlots.Count);
+
+            for (int i = 0; i < moveCount; i++)
+            {
+                FallingPiece p = list[i];
+                if (!p) continue;
+
+                Transform targetSlot = availableSlots[i];
+
+                p.transform.SetParent(targetSlot, true);
+                seq.Join(p.transform.DOMove(targetSlot.position, shuffleMoveDuration).SetEase(shuffleEase));
             }
         }
 
         yield return seq.WaitForCompletion();
 
         grid = newGrid;
-        
-        // After shuffle, check for matches?
-        // Maybe.
-        
+
         inputEnabled = prevInput;
         isShuffling = false;
+
+        MarkActivity();
     }
 
-    // ================= GRID GENERATION (Preserved Logic) =================
+    // ================= GRID GENERATION =================
 
     public void SetupGrid(int slotsPerZone)
     {
         Debug.Log($"[SlotManager] Setting up Grid: {slotsPerZone} slots per zone.");
-        
-        // Clear Logical Grid
+
         foreach (var kv in grid) kv.Value.Clear();
-        frozenSlots.Clear(); // FIX: Clear frozen slots on rebuild
+        frozenSlots.Clear();
 
         GenerateSlotsForZone(Direction.Up, slotsPerZone);
         GenerateSlotsForZone(Direction.Down, slotsPerZone);
         GenerateSlotsForZone(Direction.Left, slotsPerZone);
         GenerateSlotsForZone(Direction.Right, slotsPerZone);
-        
-        // Reset Timer if needed
-         StartShuffleRoutineIfNeeded();
+
+        StartShuffleRoutineIfNeeded();
+
+        MarkActivity();
     }
 
     private void GenerateSlotsForZone(Direction dir, int count)
@@ -350,13 +522,13 @@ public class SlotManager : MonoBehaviour
         Vector3 spreadAxis = Vector3.zero;
         switch (dir)
         {
-            case Direction.Up: 
-            case Direction.Down: 
-                spreadAxis = Vector3.forward; // Vertical
+            case Direction.Up:
+            case Direction.Down:
+                spreadAxis = Vector3.forward;
                 break;
-            case Direction.Left: 
-            case Direction.Right: 
-                spreadAxis = Vector3.right; // Horizontal
+            case Direction.Left:
+            case Direction.Right:
+                spreadAxis = Vector3.right;
                 break;
         }
 
@@ -364,12 +536,12 @@ public class SlotManager : MonoBehaviour
         {
             if (slotPrefab == null) continue;
             GameObject slot = Instantiate(slotPrefab, origin);
-            
+
             float centerOffset = (i - (count - 1) * 0.5f) * slotSpacing;
             Vector3 finalPos = origin.position + (spreadAxis * centerOffset);
-            
+
             slot.transform.position = finalPos;
-            slot.transform.rotation = Quaternion.identity; 
+            slot.transform.rotation = Quaternion.identity;
             slot.name = $"Slot_{dir}_{i}";
         }
     }
@@ -384,10 +556,12 @@ public class SlotManager : MonoBehaviour
 
         foreach (var kv in grid)
         {
-            foreach(var p in kv.Value) if(p) Destroy(p.gameObject);
+            foreach (var p in kv.Value) if (p) Destroy(p.gameObject);
             kv.Value.Clear();
         }
-        frozenSlots.Clear(); // FIX: Clear frozen slots on reset
+        frozenSlots.Clear();
+
+        MarkActivity();
     }
 
     // ================= GAMEPLAY EVENTS =================
@@ -395,10 +569,12 @@ public class SlotManager : MonoBehaviour
     private void OnPieceSpawned(FallingPiece piece)
     {
         centerQueue.Enqueue(piece);
+        MarkActivity();
     }
 
     private void OnTap(Vector2 screenPos)
     {
+        MarkActivity();
         if (!inputEnabled || isShuffling) return;
 
         Ray ray = Camera.main.ScreenPointToRay(screenPos);
@@ -411,8 +587,7 @@ public class SlotManager : MonoBehaviour
         if (centerQueue.Count > 0 && centerQueue.Peek() == hitPiece)
         {
             if (!hitPiece.isFake) return; // Can't destroy valid center piece by tap
-            
-            // Destroy Fake
+
             var sp = FindObjectOfType<Spawner>();
             if (sp) sp.NotifyCenterCleared(hitPiece);
 
@@ -447,14 +622,35 @@ public class SlotManager : MonoBehaviour
             return;
         }
 
-        // Normal piece
         RemoveFromGridAt(dir, index);
         Destroy(hitPiece.gameObject);
     }
 
+    private bool TryGetFirstFrozenEmptySlot(Direction dir, out Transform frozenSlot)
+    {
+        frozenSlot = null;
+        Transform origin = GetOrigin(dir);
+        if (!origin) return false;
+
+        for (int i = 0; i < origin.childCount; i++)
+        {
+            Transform slot = origin.GetChild(i);
+            if (!slot) continue;
+
+            if (!frozenSlots.ContainsKey(slot)) continue;
+            if (slot.GetComponentInChildren<FallingPiece>() != null) continue;
+
+            frozenSlot = slot;
+            return true;
+        }
+
+        return false;
+    }
+
     private void OnSwipe(Direction dir)
     {
-        if (!inputEnabled || isShuffling) 
+        MarkActivity();
+        if (!inputEnabled || isShuffling)
         {
             Debug.Log($"[OnSwipe] Ignored: InputEnabled={inputEnabled}, IsShuffling={isShuffling}");
             return;
@@ -465,113 +661,75 @@ public class SlotManager : MonoBehaviour
             return;
         }
 
-        // Check if Zone Full
         Transform origin = GetOrigin(dir);
+        if (!origin) return;
+
+        // Zone Full
         if (grid[dir].Count >= origin.childCount)
         {
-             Debug.Log("ZONE FULL! Penalty.");
-             if (LevelManager.Instance) LevelManager.Instance.ReduceLife();
-             return;
+            Debug.Log("ZONE FULL! Penalty.");
+            if (LevelManager.Instance) LevelManager.Instance.ReduceLife();
+            return;
         }
 
-        FallingPiece piece = centerQueue.Dequeue();
-        var sp = FindObjectOfType<Spawner>();
-        if (sp) sp.NotifyCenterCleared(piece);
+        FallingPiece peekPiece = centerQueue.Peek();
+        bool isFakeThrow = (peekPiece != null && peekPiece.isFake);
 
-        // Target is next available slot
+        // Fake breaks ANY frozen empty slot in that direction
+        if (isFakeThrow && TryGetFirstFrozenEmptySlot(dir, out Transform frozenSlot))
+        {
+            FallingPiece piece = centerQueue.Dequeue();
+
+            var sp = FindObjectOfType<Spawner>();
+            if (sp) sp.NotifyCenterCleared(piece);
+
+            piece.transform.DOMove(frozenSlot.position, moveDuration)
+                .SetEase(Ease.OutQuad)
+                .OnComplete(() =>
+                {
+                    UnfreezeSlot(frozenSlot);
+                    Destroy(piece.gameObject);
+                });
+
+            if (sp) sp.SpawnNextPiece();
+            return;
+        }
+
         int targetIndex = grid[dir].Count;
         Transform targetSlot = origin.GetChild(targetIndex);
 
-        // Check if target is Frozen
-        if (frozenSlots.ContainsKey(targetSlot))
+        if (!isFakeThrow && frozenSlots.ContainsKey(targetSlot))
         {
-             // Break Ice!
-             
-             // Move to target partially then return
-             piece.transform.DOMove(targetSlot.position, moveDuration * 0.6f).SetEase(Ease.OutQuad).OnComplete(() =>
-             {
-                 // HIT
-                 UnfreezeSlot(targetSlot);
-                 piece.TakeDamage(); // Visual shake on piece too
-                 
-                 // Return to center (approx) or just destroy? 
-                 // User said "returns to center".
-                 // Actually pieces come from center queue.
-                 // We should put it back in queue? Or just let it sit in center?
-                 // Current logic dequeues immediately.
-                 // Let's just animate it back to center position.
-                 
-                 piece.transform.DOMove(Vector3.zero, moveDuration * 0.6f).SetEase(Ease.OutQuad).OnComplete(() =>
-                 {
-                     // Re-enqueue? The center queue logic is simple queue. 
-                     // It might be complicated to re-insert at front.
-                     // Simplest: Just destroy it (wasted throw) or Put back in front of queue
-                     
-                     // If we destroy it, player loses the piece.
-                     // "waste a throw" implies losing piece usually.
-                     // But user said "returns to the center".
-                     // Let's re-enqueue it at the Front if possible, or just add to queue end.
-                     // Queue doesn't support PushFront.
-                     
-                     // Let's just "Return to center" visually and effectively Re-Queue it by not registering in grid.
-                     // We need to re-add to queue.
-                     
-                     // Actually, if we want to simulate "waste time", keeping the piece is better.
-                     // But if we want to "waste resource", destroying is better.
-                     // User said "waste a throw", usually means ammo loss.
-                     // BUT "returns to center" implies it comes back.
-                     // Let's keep it.
-                     
-                     // Re-enqueue
-                     centerQueue.Enqueue(piece);
-                     
-                     // Reset pos
-                     piece.transform.position = Vector3.zero;
-                     
-                     // If spawner waiting, it might spawn another on top?
-                     // Spawner checks 'currentCenterPiece'.
-                     // We dequeued it, so Spawner thinks it's gone?
-                     // Spawner: NotifyCenterCleared is called when executed.
-                     // In OnSwipe, we call NotifyCenterCleared immediately.
-                     // So Spawner spawned a NEW one already?
-                     // If so, we have collision.
-                     
-                     // Let's look at OnSwipe Start:
-                     // sp.NotifyCenterCleared(piece); -> This frees spawner.
-                     // sp.SpawnNextPiece(); -> This spawns new one.
-                     
-                     // So if we return, we clash with new spawn.
-                     // Solution: DESTROY the piece. "Wasted throw".
-                     // Animation: Hit -> Break -> Destroy.
-                     Destroy(piece.gameObject);
-                 });
-             });
-             
-             if (sp) sp.SpawnNextPiece();
-             return; 
+            Debug.Log("[OnSwipe] Blocked: Frozen slot. Use a FAKE to break it.");
+            return;
         }
 
-        piece.TweenToSlot(targetSlot, moveDuration, moveEase, () =>
-        {
-            RegisterPiece(dir, piece);
+        FallingPiece piece2 = centerQueue.Dequeue();
+        var sp2 = FindObjectOfType<Spawner>();
+        if (sp2) sp2.NotifyCenterCleared(piece2);
 
-            if (piece.isFake)
+        piece2.TweenToSlot(targetSlot, moveDuration, moveEase, () =>
+        {
+            RegisterPiece(dir, piece2);
+
+            if (piece2.isFake)
             {
-                piece.SetFrozen(true);
+                piece2.SetFrozen(true);
                 Debug.Log("OOPS! Placed a fake -> Penalty.");
                 if (LevelManager.Instance) LevelManager.Instance.ReduceLife();
             }
         });
 
-        if (sp) sp.SpawnNextPiece();
+        if (sp2) sp2.SpawnNextPiece();
     }
 
-    // ================= HELPERS & LOGIC =================
+    // ================= HELPERS =================
 
     private void RegisterPiece(Direction dir, FallingPiece piece)
     {
         grid[dir].Add(piece);
         CheckMatch3(dir);
+        MarkActivity();
     }
 
     private bool TryFindPieceInGrid(FallingPiece piece, out Direction dir, out int index)
@@ -599,6 +757,7 @@ public class SlotManager : MonoBehaviour
 
         list.RemoveAt(index);
         CompactZone(dir);
+        MarkActivity();
     }
 
     private void CompactZone(Direction dir)
@@ -607,7 +766,6 @@ public class SlotManager : MonoBehaviour
         Transform origin = GetOrigin(dir);
         if (!origin) return;
 
-        // Shift everyone towards index 0
         for (int i = 0; i < list.Count; i++)
         {
             Transform slot = origin.GetChild(i);
@@ -631,31 +789,30 @@ public class SlotManager : MonoBehaviour
         };
     }
 
+    // MATCH3: renk üzerinden
     private void CheckMatch3(Direction dir)
     {
         var list = grid[dir];
         Transform origin = GetOrigin(dir);
-        
-        // Dynamic Match: Requires Full Zone
-        int capacity = origin.childCount;
-        if (list.Count < capacity) return; // Wait until full
 
-        // Check compatibility
-        var targetType = list[0].pieceType;
+        int capacity = origin.childCount;
+        if (list.Count < capacity) return;
+
+        Color targetColor = list[0].GetNormalColor();
+
         foreach (var p in list)
         {
-            if (p.isFrozen) return; 
-            if (p.pieceType != targetType) return;
+            if (p.isFrozen) return;
+            if (p.GetNormalColor() != targetColor) return;
         }
 
-        // MATCH!
-        Debug.Log($"[CheckMatch3] MATCHED! Type: {targetType}. Items: {list[0].pieceType}, {list[1].pieceType}, {list[2].pieceType}");
+        Debug.Log($"[CheckMatch3] MATCHED! Color: {targetColor}.");
+        MarkActivity();
         OnMatch3?.Invoke();
 
-        // Destroy all
-        foreach (var p in list) if(p) Destroy(p.gameObject);
+        foreach (var p in list) if (p) Destroy(p.gameObject);
         list.Clear();
-        
+
         Debug.Log($"ZONE CLEAR! {capacity} items matched.");
     }
 }
