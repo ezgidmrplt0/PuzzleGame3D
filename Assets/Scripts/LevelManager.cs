@@ -8,6 +8,12 @@ public class LevelManager : MonoBehaviour
     [SerializeField] private Spawner spawner;
     [SerializeField] private SlotManager slotManager;
 
+    [Header("UI - Panels")]
+    [SerializeField] private GameObject winPanel;
+    [SerializeField] private TMP_Text winText;
+    [SerializeField] private GameObject losePanel;
+    [SerializeField] private TMP_Text loseText;
+
     [Header("UI - Text")]
     [SerializeField] private TMP_Text levelText;
     [SerializeField] private TMP_Text timerText;
@@ -16,9 +22,9 @@ public class LevelManager : MonoBehaviour
 
     [Header("Camera Settings")]
     [SerializeField] private Camera mainCamera;
-    [SerializeField] private float baseFOV = 60f;
-    [SerializeField] private float zoomOutPerSlot = 5f;
-    [SerializeField] private float sidePadding = 1.0f;
+    [SerializeField] private float baseFOV = 45f;       // Reduced from 60f
+    [SerializeField] private float zoomOutPerSlot = 2f; // Reduced from 5f
+    [SerializeField] private float sidePadding = 0.5f;  // Reduced from 1.0f
 
     [Header("UI - Buttons")]
     [Tooltip("Pause/Resume butonu")]
@@ -171,6 +177,10 @@ public class LevelManager : MonoBehaviour
         isPaused = false;
         SetPauseLabel(false);
 
+        // Hide panels on start
+        if (winPanel) winPanel.SetActive(false);
+        if (losePanel) losePanel.SetActive(false);
+
         currentLevel = Mathf.Max(1, level);
         currentLives = maxLives;
         matchesDone = 0;
@@ -204,8 +214,14 @@ public class LevelManager : MonoBehaviour
         isRunning = false;
         slotManager.SetInputEnabled(false);
 
-        if (stateText) stateText.text = "LEVEL COMPLETED!";
-        Invoke(nameof(NextLevel), 1.0f);
+        if (stateText) stateText.text = "";
+        
+        if (winPanel) 
+        {
+            winPanel.SetActive(true);
+            if (winText) winText.text = "LEVEL\nCOMPLETED!";
+        }
+        Invoke(nameof(NextLevel), 1.5f);
     }
 
     private void Lose(string reason)
@@ -213,8 +229,14 @@ public class LevelManager : MonoBehaviour
         isRunning = false;
         slotManager.SetInputEnabled(false);
 
-        if (stateText) stateText.text = $"FAILED: {reason}";
-        Invoke(nameof(RetryLevel), 1.5f);
+        if (stateText) stateText.text = "";
+        
+        if (losePanel) 
+        {
+            losePanel.SetActive(true);
+            if (loseText) loseText.text = $"FAILED\n{reason}";
+        }
+        Invoke(nameof(RetryLevel), 2.0f);
     }
 
     private void NextLevel() => StartLevel(currentLevel + 1);
@@ -296,12 +318,13 @@ public class LevelManager : MonoBehaviour
         float spacing = 1.6f;
 
         float wallHalfLength = ((slotsPerZone - 1) * spacing * 0.5f) + 0.8f;
-
+        
+        float pad = sidePadding; // Use the padding variable
         float boundX = Mathf.Max(startDist + 0.8f, wallHalfLength);
         float boundZ = Mathf.Max(startDist + 0.8f, wallHalfLength);
 
         float maxExtent = Mathf.Max(boundX, boundZ);
-        maxExtent += sidePadding;
+        maxExtent += pad;
 
         if (mainCamera.orthographic)
         {
@@ -311,14 +334,14 @@ public class LevelManager : MonoBehaviour
         }
         else
         {
-            float extraZoom = (slotsPerZone - 1) * 2.5f;
+            float extraZoom = (slotsPerZone - 1) * zoomOutPerSlot;
 
             mainCamera.fieldOfView = baseFOV + extraZoom;
 
             float aspect = mainCamera.aspect;
             if (aspect < 1.0f)
             {
-                mainCamera.fieldOfView += (1.0f / aspect) * 3f;
+                mainCamera.fieldOfView += (1.0f / aspect) * 2f; 
             }
         }
     }
