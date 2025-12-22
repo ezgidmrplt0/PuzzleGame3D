@@ -1899,6 +1899,8 @@ MonoBehaviour:
     fakeChance: 20
     pieceTypeCount: 2
     slotsPerZone: 3
+    invertHorizontalSwipe: 1
+    invertVerticalSwipe: 1
     spawns: []
   colorPalette:
   - {r: 1, g: 0, b: 0, a: 1}
@@ -2567,6 +2569,11 @@ MonoBehaviour:
   startLevel: 1
   maxLives: 3
   fixedLevelSeconds: 30
+  enableTimeWarningShake: 1
+  warningAtSeconds: 5
+  warningShakeDuration: 0.25
+  warningShakeStrength: 0.15
+  warningShakeVibrato: 18
 --- !u!4 &961691102
 Transform:
   m_ObjectHideFlags: 0
@@ -4122,6 +4129,9 @@ MonoBehaviour:
   startDistance: 2.2
   moveDuration: 0.25
   moveEase: 27
+  enableMatchExplode: 1
+  matchExplodeDuration: 0.25
+  matchShrinkScale: 0.85
   enableContentShuffle: 1
   shuffleInterval: 10
   shuffleMoveDuration: 0.45
@@ -4139,6 +4149,13 @@ MonoBehaviour:
   pieceWiggleStrength: 0.05
   pieceWiggleDuration: 1.1
   wigglePiecesToo: 1
+  enablePiecePulse: 1
+  pulseCheckInterval: 2
+  pulseChanceAll: 0.6
+  pulseScale: 0.94
+  pulseHalfDuration: 0.12
+  pulseEaseDown: 6
+  pulseEaseUp: 27
 --- !u!4 &1669411851
 Transform:
   m_ObjectHideFlags: 0

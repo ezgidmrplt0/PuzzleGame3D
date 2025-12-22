@@ -17,7 +17,6 @@ public class SwipeInput : MonoBehaviour
 
     void Update()
     {
-        // Mouse / Touch unification
         if (Input.GetMouseButtonDown(0))
         {
             startPos = Input.mousePosition;
@@ -37,7 +36,7 @@ public class SwipeInput : MonoBehaviour
         float timeDelta = Time.time - startTime;
         float distance = delta.magnitude;
 
-        // CHECK TAP
+        // TAP
         if (timeDelta < tapThreshold && distance < maxTapMovement)
         {
             Debug.Log("[Input] Tap Detected");
@@ -45,7 +44,7 @@ public class SwipeInput : MonoBehaviour
             return;
         }
 
-        // CHECK SWIPE
+        // SWIPE
         if (distance >= minSwipeDistance)
         {
             float x = delta.x;
@@ -53,13 +52,11 @@ public class SwipeInput : MonoBehaviour
 
             if (Mathf.Abs(x) > Mathf.Abs(y))
             {
-                // Horizontal
                 Direction dir = (x > 0) ? Direction.Right : Direction.Left;
                 OnSwipe?.Invoke(dir);
             }
             else
             {
-                // Vertical
                 Direction dir = (y > 0) ? Direction.Up : Direction.Down;
                 OnSwipe?.Invoke(dir);
             }

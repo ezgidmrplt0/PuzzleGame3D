@@ -36,7 +36,7 @@ public class Spawner : MonoBehaviour
     [SerializeField] private int currentLevel = 1;
 
     private FallingPiece currentCenterPiece;
-    private LevelConfig currentLevelConfig; // CACHED CONFIG
+    private LevelConfig currentLevelConfig;
 
     [Serializable]
     public class LevelConfig
@@ -47,12 +47,17 @@ public class Spawner : MonoBehaviour
         [Range(0, 100)] public float fakeChance = 20f;
 
         [Header("Çeşitlilik (RENK SAYISI)")]
-        [Tooltip("Bu levelde kaç farklı RENK kullanılacak? (Örn: 3 seçerseniz 3 farklı renk gelir)")]
         [Range(1, 6)] public int pieceTypeCount = 3;
 
         [Header("Grid Yapısı")]
-        [Tooltip("Her yönde (Yukarı, Aşağı, Sağ, Sol) kaç slot olacak?")]
         [Range(1, 4)] public int slotsPerZone = 1;
+
+        [Header("Ters Input (Opsiyonel)")]
+        [Tooltip("Sağa swipe atınca sola yerleştirir, sola swipe atınca sağa yerleştirir.")]
+        public bool invertHorizontalSwipe = false;
+
+        [Tooltip("Yukarı swipe atınca aşağı yerleştirir, aşağı swipe atınca yukarı yerleştirir.")]
+        public bool invertVerticalSwipe = false;
 
         [HideInInspector]
         public List<SpawnEntry> spawns = new List<SpawnEntry>();
@@ -68,9 +73,7 @@ public class Spawner : MonoBehaviour
     public LevelConfig GetLevelConfig(int level)
     {
         if (currentLevelConfig != null && currentLevel == level)
-        {
             return currentLevelConfig;
-        }
 
         return CreateLevelConfig(level);
     }
@@ -79,23 +82,28 @@ public class Spawner : MonoBehaviour
     {
         LevelConfig cfg = null;
 
-        // 1. Try to get Hand-Crafted Difficulty
+        // 1) Preset
         if (levels != null && levels.Count > 0)
         {
             int idx = level - 1;
             if (idx < levels.Count)
             {
                 var preset = levels[idx];
-                cfg = new LevelConfig();
-                cfg.targetMatches = preset.targetMatches;
-                cfg.timeLimitSeconds = preset.timeLimitSeconds;
-                cfg.fakeChance = preset.fakeChance;
-                cfg.pieceTypeCount = preset.pieceTypeCount;
-                cfg.slotsPerZone = preset.slotsPerZone;
+                cfg = new LevelConfig
+                {
+                    targetMatches = preset.targetMatches,
+                    timeLimitSeconds = preset.timeLimitSeconds,
+                    fakeChance = preset.fakeChance,
+                    pieceTypeCount = preset.pieceTypeCount,
+                    slotsPerZone = preset.slotsPerZone,
+
+                    invertHorizontalSwipe = preset.invertHorizontalSwipe,
+                    invertVerticalSwipe = preset.invertVerticalSwipe
+                };
             }
         }
 
-        // 2. If no config found, generate procedural difficulty
+        // 2) Procedural
         if (cfg == null)
         {
             cfg = GenerateProceduralDifficulty(level);
@@ -107,7 +115,7 @@ public class Spawner : MonoBehaviour
             }
         }
 
-        // 3. AUTO-POPULATE PIECES (ARTIK TEK PREFAB OLABİLİR)
+        // 3) Spawn pool
         PopulateSpawnsFromPool(cfg, level);
 
         return cfg;
@@ -116,45 +124,47 @@ public class Spawner : MonoBehaviour
     private LevelConfig GenerateProceduralDifficulty(int level)
     {
         LevelConfig cfg = new LevelConfig();
-
         float roll = UnityEngine.Random.value;
 
         if (roll < 0.50f)
         {
-            // EASY
             cfg.fakeChance = UnityEngine.Random.Range(5f, 15f);
             cfg.targetMatches = 3 + (level / 5);
             cfg.timeLimitSeconds = 45 + (level / 2);
-            cfg.pieceTypeCount = 3; // renk sayısı
+            cfg.pieceTypeCount = 3;
             cfg.slotsPerZone = 1;
         }
         else if (roll < 0.80f)
         {
-            // MEDIUM
             cfg.fakeChance = UnityEngine.Random.Range(20f, 35f);
             cfg.targetMatches = 5 + (level / 4);
             cfg.timeLimitSeconds = 40 + (level / 3);
-            cfg.pieceTypeCount = 4; // renk sayısı
+            cfg.pieceTypeCount = 4;
             cfg.slotsPerZone = 2;
         }
         else if (roll < 0.95f)
         {
-            // HARD
             cfg.fakeChance = UnityEngine.Random.Range(40f, 60f);
             cfg.targetMatches = 8 + (level / 3);
             cfg.timeLimitSeconds = 35 + (level / 3);
-            cfg.pieceTypeCount = 5; // renk sayısı
+            cfg.pieceTypeCount = 5;
             cfg.slotsPerZone = 2;
         }
         else
         {
-            // CHAOS
             cfg.fakeChance = 80f;
             cfg.targetMatches = 10 + (level / 2);
             cfg.timeLimitSeconds = 30 + (level / 4);
-            cfg.pieceTypeCount = 6; // renk sayısı
+            cfg.pieceTypeCount = 6;
             cfg.slotsPerZone = 3;
         }
+
+        // İstersen procedural ters inputu kapatabilirsin:
+        if (level >= 6 && UnityEngine.Random.value < 0.15f)
+            cfg.invertHorizontalSwipe = true;
+
+        if (level >= 10 && UnityEngine.Random.value < 0.10f)
+            cfg.invertVerticalSwipe = true;
 
         return cfg;
     }
@@ -166,8 +176,7 @@ public class Spawner : MonoBehaviour
         if (availablePieces != null && availablePieces.Count > 0)
         {
             int totalAvailable = availablePieces.Count;
-            int typeCountToUse = 1; // <<< ARTIK TEK PREFAB
-
+            int typeCountToUse = 1; // tek prefab
             typeCountToUse = Mathf.Clamp(typeCountToUse, 1, totalAvailable);
 
             List<GameObject> pool = new List<GameObject>(availablePieces);
@@ -176,9 +185,7 @@ public class Spawner : MonoBehaviour
             for (int i = 0; i < typeCountToUse; i++)
             {
                 if (pool[i] != null)
-                {
                     cfg.spawns.Add(new SpawnEntry { prefab = pool[i], count = 100 });
-                }
             }
         }
         else
@@ -193,7 +200,6 @@ public class Spawner : MonoBehaviour
         currentCenterPiece = null;
 
         currentLevelConfig = GetLevelConfig(currentLevel);
-
         SpawnNextPiece();
     }
 
@@ -226,7 +232,7 @@ public class Spawner : MonoBehaviour
         FallingPiece fp = go.GetComponent<FallingPiece>();
         if (!fp) fp = go.AddComponent<FallingPiece>();
 
-        // ====== RENK ATA (NORMAL) ======
+        // Renk ata (normal)
         int paletteCount = (colorPalette != null) ? colorPalette.Count : 0;
         int colorCountToUse = Mathf.Clamp(cfg.pieceTypeCount, 1, Mathf.Max(1, paletteCount));
 
@@ -238,7 +244,7 @@ public class Spawner : MonoBehaviour
         }
         fp.SetNormalColor(chosen);
 
-        // ====== FAKE ======
+        // Fake
         bool isFake = UnityEngine.Random.value * 100f < cfg.fakeChance;
         fp.SetFake(isFake);
 

@@ -34,6 +34,12 @@ public class SlotManager : MonoBehaviour
     [SerializeField] private float moveDuration = 0.25f;
     [SerializeField] private Ease moveEase = Ease.OutBack;
 
+    // ✅ Match clear anim (shrink then destroy)
+    [Header("Match Explode (Cosmetic)")]
+    [SerializeField] private bool enableMatchExplode = true;
+    [SerializeField] private float matchExplodeDuration = 0.22f;
+    [SerializeField] private float matchShrinkScale = 0.85f;
+
     [Header("Content Shuffle (Difficulty)")]
     [SerializeField] private bool enableContentShuffle = true;
     [SerializeField] private float shuffleInterval = 12f;
@@ -58,6 +64,18 @@ public class SlotManager : MonoBehaviour
     [SerializeField] private float pieceWiggleStrength = 0.05f;
     [SerializeField] private float pieceWiggleDuration = 1.1f;
     [SerializeField] private bool wigglePiecesToo = true;
+
+    // ✅ ALL pieces pulse same time
+    [Header("Piece Pulse (Cosmetic)")]
+    [SerializeField] private bool enablePiecePulse = true;
+    [SerializeField] private float pulseCheckInterval = 2.0f;
+    [Range(0f, 1f)]
+    [SerializeField] private float pulseChanceAll = 0.6f; // her tetikte %60 ihtimal
+
+    [SerializeField] private float pulseScale = 0.94f;      // küçülme oranı
+    [SerializeField] private float pulseHalfDuration = 0.12f;
+    [SerializeField] private Ease pulseEaseDown = Ease.OutQuad;
+    [SerializeField] private Ease pulseEaseUp = Ease.OutBack;
 
     private bool inputEnabled = true;
     private bool isShuffling = false;
@@ -88,6 +106,15 @@ public class SlotManager : MonoBehaviour
     private readonly Dictionary<Transform, Tween> slotIdleTweens = new Dictionary<Transform, Tween>();
     private readonly Dictionary<FallingPiece, Tween> pieceIdleTweens = new Dictionary<FallingPiece, Tween>();
 
+    // Pulse (global)
+    private Coroutine pulseRoutine;
+    private Sequence globalPulseSeq;
+    private readonly Dictionary<FallingPiece, Vector3> piecePulseOriginalScales = new Dictionary<FallingPiece, Vector3>();
+
+    // Inversion
+    private bool invertHorizontal;
+    private bool invertVertical;
+
     private void Awake()
     {
         if (Instance == null) Instance = this;
@@ -109,6 +136,29 @@ public class SlotManager : MonoBehaviour
 
     public void SetInputEnabled(bool enabled) => inputEnabled = enabled;
 
+    public void SetSwipeInversion(bool invertHorizontalSwipe, bool invertVerticalSwipe)
+    {
+        invertHorizontal = invertHorizontalSwipe;
+        invertVertical = invertVerticalSwipe;
+    }
+
+    private Direction ApplyInversion(Direction dir)
+    {
+        if (invertHorizontal)
+        {
+            if (dir == Direction.Left) dir = Direction.Right;
+            else if (dir == Direction.Right) dir = Direction.Left;
+        }
+
+        if (invertVertical)
+        {
+            if (dir == Direction.Up) dir = Direction.Down;
+            else if (dir == Direction.Down) dir = Direction.Up;
+        }
+
+        return dir;
+    }
+
     private void OnEnable()
     {
         Spawner.OnPieceSpawned += OnPieceSpawned;
@@ -120,6 +170,7 @@ public class SlotManager : MonoBehaviour
 
         MarkActivity();
         StartIdleRoutine();
+        StartPulseRoutine();
     }
 
     private void OnDisable()
@@ -133,9 +184,12 @@ public class SlotManager : MonoBehaviour
 
         StopIdleRoutine();
         StopIdleWiggle();
+
+        StopPulseRoutine();
+        StopGlobalPulseTween();
     }
 
-    // ================= IDLE WIGGLE =================
+    // ================= Activity / Idle =================
 
     private void MarkActivity()
     {
@@ -173,9 +227,7 @@ public class SlotManager : MonoBehaviour
 
             float idleTime = Time.time - lastActivityTime;
             if (!idleActive && idleTime >= idleDelay)
-            {
                 StartIdleWiggle();
-            }
         }
     }
 
@@ -252,7 +304,136 @@ public class SlotManager : MonoBehaviour
         }
     }
 
-    // ================= FREEZE LOOP =================
+    // ================= Pulse (ALL at once) =================
+
+    private void StartPulseRoutine()
+    {
+        if (!enablePiecePulse) return;
+
+        if (pulseRoutine != null) StopCoroutine(pulseRoutine);
+        pulseRoutine = StartCoroutine(PulseLoop());
+    }
+
+    private void StopPulseRoutine()
+    {
+        if (pulseRoutine != null)
+        {
+            StopCoroutine(pulseRoutine);
+            pulseRoutine = null;
+        }
+    }
+
+    private void StopGlobalPulseTween()
+    {
+        if (globalPulseSeq != null && globalPulseSeq.IsActive())
+            globalPulseSeq.Kill();
+
+        globalPulseSeq = null;
+
+        foreach (var kv in piecePulseOriginalScales)
+        {
+            if (kv.Key) kv.Key.transform.localScale = kv.Value;
+        }
+        piecePulseOriginalScales.Clear();
+    }
+
+    private System.Collections.IEnumerator PulseLoop()
+    {
+        yield return new WaitForSeconds(1f);
+
+        while (enablePiecePulse)
+        {
+            yield return new WaitForSeconds(pulseCheckInterval);
+
+            if (!inputEnabled) continue;
+            if (isShuffling) continue;
+            if (idleActive) continue; // idle ile çakışmasın
+
+            if (UnityEngine.Random.value > pulseChanceAll) continue;
+
+            PulseAllPiecesAtOnce();
+        }
+    }
+
+    private void PulseAllPiecesAtOnce()
+    {
+        if (globalPulseSeq != null && globalPulseSeq.IsActive()) return;
+
+        // Grid’deki parçaları topla
+        List<FallingPiece> pieces = new List<FallingPiece>();
+        foreach (var kv in grid)
+        {
+            var list = kv.Value;
+            for (int i = 0; i < list.Count; i++)
+                if (list[i]) pieces.Add(list[i]);
+        }
+        if (pieces.Count == 0) return;
+
+        // ✅ Animasyon başlamadan önceki "GERÇEK" scale snapshot
+        piecePulseOriginalScales.Clear();
+        for (int i = 0; i < pieces.Count; i++)
+        {
+            var p = pieces[i];
+            piecePulseOriginalScales[p] = p.transform.localScale;
+        }
+
+        globalPulseSeq = DOTween.Sequence();
+
+        // ✅ 1) Küçül (hepsi aynı anda)
+        for (int i = 0; i < pieces.Count; i++)
+        {
+            var p = pieces[i];
+            Vector3 original = piecePulseOriginalScales[p];
+            globalPulseSeq.Join(
+                p.transform.DOScale(original * pulseScale, pulseHalfDuration).SetEase(pulseEaseDown)
+            );
+        }
+
+        // ✅ 2) Eski haline dön (hepsi aynı anda)
+        for (int i = 0; i < pieces.Count; i++)
+        {
+            var p = pieces[i];
+            Vector3 original = piecePulseOriginalScales[p];
+            globalPulseSeq.Join(
+                p.transform.DOScale(original, pulseHalfDuration).SetEase(pulseEaseUp)
+            );
+        }
+
+        // ✅ 3) GARANTİ: tween bitince scale'ı manuel olarak da eski haline sabitle
+        globalPulseSeq.OnComplete(() =>
+        {
+            for (int i = 0; i < pieces.Count; i++)
+            {
+                var p = pieces[i];
+                if (!p) continue;
+
+                if (piecePulseOriginalScales.TryGetValue(p, out var original))
+                    p.transform.localScale = original;
+            }
+
+            piecePulseOriginalScales.Clear();
+            globalPulseSeq = null;
+        });
+
+        // ✅ EXTRA GARANTİ: tween kill olursa bile scale geri dönsün
+        globalPulseSeq.OnKill(() =>
+        {
+            for (int i = 0; i < pieces.Count; i++)
+            {
+                var p = pieces[i];
+                if (!p) continue;
+
+                if (piecePulseOriginalScales.TryGetValue(p, out var original))
+                    p.transform.localScale = original;
+            }
+
+            piecePulseOriginalScales.Clear();
+            globalPulseSeq = null;
+        });
+    }
+
+
+    // ================= Freeze Loop =================
 
     private void StartFreezeRoutineIfNeeded()
     {
@@ -277,9 +458,7 @@ public class SlotManager : MonoBehaviour
             yield return new WaitForSeconds(freezeInterval);
 
             if (UnityEngine.Random.value < freezeChance && !isShuffling && inputEnabled)
-            {
                 TryFreezeRandomSlot();
-            }
         }
     }
 
@@ -292,7 +471,6 @@ public class SlotManager : MonoBehaviour
         int randIdx = UnityEngine.Random.Range(0, origin.childCount);
         Transform slotTr = origin.GetChild(randIdx);
 
-        // Only freeze if empty
         bool occupied = false;
         foreach (var p in grid[d])
         {
@@ -304,9 +482,7 @@ public class SlotManager : MonoBehaviour
         }
 
         if (!occupied)
-        {
             FreezeSlot(slotTr);
-        }
     }
 
     private void FreezeSlot(Transform slot)
@@ -329,7 +505,7 @@ public class SlotManager : MonoBehaviour
             frozenSlots[slot] = new SlotVisualState(Color.white, null);
         }
 
-        MarkActivity(); // cosmetic
+        MarkActivity();
     }
 
     private void UnfreezeSlot(Transform slot)
@@ -347,10 +523,10 @@ public class SlotManager : MonoBehaviour
         frozenSlots.Remove(slot);
         slot.DOShakeRotation(0.2f, 15f);
 
-        MarkActivity(); // cosmetic
+        MarkActivity();
     }
 
-    // ================= SHUFFLE LOOP =================
+    // ================= Shuffle Loop =================
 
     private void StartShuffleRoutineIfNeeded()
     {
@@ -383,7 +559,6 @@ public class SlotManager : MonoBehaviour
         }
     }
 
-    // ✅ Shuffle sırasında slot doluysa başka slota (overlap yok)
     private System.Collections.IEnumerator ShuffleContentsOnce()
     {
         if (isShuffling) yield break;
@@ -399,7 +574,6 @@ public class SlotManager : MonoBehaviour
 
         MarkActivity();
 
-        // 1) Random Permutation of Zones
         Direction[] fromDirs = (Direction[])dirs.Clone();
         Direction[] toDirs = (Direction[])dirs.Clone();
 
@@ -419,7 +593,6 @@ public class SlotManager : MonoBehaviour
             (toDirs[0], toDirs[1], toDirs[2], toDirs[3]) = (toDirs[1], toDirs[2], toDirs[3], toDirs[0]);
         }
 
-        // 2) Create New Grid State
         var newGrid = new Dictionary<Direction, List<FallingPiece>>
         {
             { Direction.Up, new List<FallingPiece>() },
@@ -435,7 +608,6 @@ public class SlotManager : MonoBehaviour
             newGrid[to].AddRange(grid[from]);
         }
 
-        // ✅ 3) DETACH ALL PIECES FIRST
         foreach (var d in dirs)
         {
             var list = newGrid[d];
@@ -446,7 +618,6 @@ public class SlotManager : MonoBehaviour
             }
         }
 
-        // ✅ 4) Move only to: NOT frozen + EMPTY slots
         Sequence seq = DOTween.Sequence();
 
         foreach (var d in dirs)
@@ -462,7 +633,7 @@ public class SlotManager : MonoBehaviour
                 Transform s = origin.GetChild(i);
                 if (!s) continue;
                 if (frozenSlots.ContainsKey(s)) continue;
-                if (s.GetComponentInChildren<FallingPiece>() != null) continue; // ✅ no overlap
+                if (s.GetComponentInChildren<FallingPiece>() != null) continue;
                 availableSlots.Add(s);
             }
 
@@ -492,7 +663,7 @@ public class SlotManager : MonoBehaviour
         MarkActivity();
     }
 
-    // ================= GRID GENERATION =================
+    // ================= Grid Generation =================
 
     public void SetupGrid(int slotsPerZone)
     {
@@ -507,7 +678,6 @@ public class SlotManager : MonoBehaviour
         GenerateSlotsForZone(Direction.Right, slotsPerZone);
 
         StartShuffleRoutineIfNeeded();
-
         MarkActivity();
     }
 
@@ -564,7 +734,7 @@ public class SlotManager : MonoBehaviour
         MarkActivity();
     }
 
-    // ================= GAMEPLAY EVENTS =================
+    // ================= Events =================
 
     private void OnPieceSpawned(FallingPiece piece)
     {
@@ -583,10 +753,10 @@ public class SlotManager : MonoBehaviour
         FallingPiece hitPiece = hit.collider.GetComponent<FallingPiece>();
         if (hitPiece == null) return;
 
-        // CASE 1: Center
+        // Center
         if (centerQueue.Count > 0 && centerQueue.Peek() == hitPiece)
         {
-            if (!hitPiece.isFake) return; // Can't destroy valid center piece by tap
+            if (!hitPiece.isFake) return;
 
             var sp = FindObjectOfType<Spawner>();
             if (sp) sp.NotifyCenterCleared(hitPiece);
@@ -598,10 +768,9 @@ public class SlotManager : MonoBehaviour
             return;
         }
 
-        // CASE 2: Grid Piece
+        // Grid piece
         if (!TryFindPieceInGrid(hitPiece, out Direction dir, out int index)) return;
 
-        // Penalty for tapping grid
         if (LevelManager.Instance) LevelManager.Instance.ReduceLife();
 
         if (hitPiece.isFake)
@@ -643,7 +812,6 @@ public class SlotManager : MonoBehaviour
             frozenSlot = slot;
             return true;
         }
-
         return false;
     }
 
@@ -661,10 +829,12 @@ public class SlotManager : MonoBehaviour
             return;
         }
 
+        // ✅ inversion
+        dir = ApplyInversion(dir);
+
         Transform origin = GetOrigin(dir);
         if (!origin) return;
 
-        // Zone Full
         if (grid[dir].Count >= origin.childCount)
         {
             Debug.Log("ZONE FULL! Penalty.");
@@ -675,7 +845,6 @@ public class SlotManager : MonoBehaviour
         FallingPiece peekPiece = centerQueue.Peek();
         bool isFakeThrow = (peekPiece != null && peekPiece.isFake);
 
-        // Fake breaks ANY frozen empty slot in that direction
         if (isFakeThrow && TryGetFirstFrozenEmptySlot(dir, out Transform frozenSlot))
         {
             FallingPiece piece = centerQueue.Dequeue();
@@ -723,7 +892,7 @@ public class SlotManager : MonoBehaviour
         if (sp2) sp2.SpawnNextPiece();
     }
 
-    // ================= HELPERS =================
+    // ================= Helpers =================
 
     private void RegisterPiece(Direction dir, FallingPiece piece)
     {
@@ -789,7 +958,8 @@ public class SlotManager : MonoBehaviour
         };
     }
 
-    // MATCH3: renk üzerinden
+    // ================= Match3 =================
+
     private void CheckMatch3(Direction dir)
     {
         var list = grid[dir];
@@ -810,9 +980,18 @@ public class SlotManager : MonoBehaviour
         MarkActivity();
         OnMatch3?.Invoke();
 
-        foreach (var p in list) if (p) Destroy(p.gameObject);
-        list.Clear();
+        if (enableMatchExplode)
+        {
+            foreach (var p in list)
+                if (p) p.PlayMatchShrinkAndDestroy(matchExplodeDuration, matchShrinkScale);
+        }
+        else
+        {
+            foreach (var p in list)
+                if (p) Destroy(p.gameObject);
+        }
 
+        list.Clear();
         Debug.Log($"ZONE CLEAR! {capacity} items matched.");
     }
 }

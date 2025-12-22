@@ -8,8 +8,7 @@ public class FallingPiece : MonoBehaviour
     public int freezeHealth { get; private set; } = 3;
 
     [Header("Normal Visuals")]
-    [Tooltip("Normal durumdayken uygulanacak texture (opsiyonel).")]
-    [SerializeField] private Texture faceTexture;   // normal texture (optional)
+    [SerializeField] private Texture faceTexture;
 
     [Header("Frozen Visuals")]
     [SerializeField] private Texture iceTexture;
@@ -21,7 +20,7 @@ public class FallingPiece : MonoBehaviour
 
     private MeshRenderer meshRenderer;
 
-    private Color normalColor = Color.white;        // <<< MATCH3 bununla yapılır
+    private Color normalColor = Color.white;
     private Texture normalTexture = null;
 
     private Rigidbody rb;
@@ -72,24 +71,15 @@ public class FallingPiece : MonoBehaviour
     {
         if (!meshRenderer) return;
 
-        // Priority: Frozen > Fake > Normal
         if (isFrozen)
         {
             meshRenderer.material.color = iceColor;
-
-            if (iceTexture != null)
-                meshRenderer.material.mainTexture = iceTexture;
-            else
-                meshRenderer.material.mainTexture = normalTexture;
+            meshRenderer.material.mainTexture = (iceTexture != null) ? iceTexture : normalTexture;
         }
         else if (isFake)
         {
             meshRenderer.material.color = fakeColor;
-
-            if (fakeTexture != null)
-                meshRenderer.material.mainTexture = fakeTexture;
-            else
-                meshRenderer.material.mainTexture = normalTexture;
+            meshRenderer.material.mainTexture = (fakeTexture != null) ? fakeTexture : normalTexture;
         }
         else
         {
@@ -126,6 +116,26 @@ public class FallingPiece : MonoBehaviour
                 if (col) col.enabled = true;
                 onComplete?.Invoke();
             });
+    }
+
+    // ✅ MATCH: balon gibi küçülüp yok olma (büyüme yok)
+    public void PlayMatchShrinkAndDestroy(float duration, float shrinkScaleMultiplier)
+    {
+        if (activeTween != null && activeTween.IsActive()) activeTween.Kill();
+        if (col) col.enabled = false;
+
+        Vector3 original = transform.localScale;
+
+        Sequence seq = DOTween.Sequence();
+        seq.Append(transform.DOScale(original * shrinkScaleMultiplier, duration * 0.55f).SetEase(Ease.OutQuad));
+        seq.Append(transform.DOScale(Vector3.zero, duration * 0.45f).SetEase(Ease.InBack));
+        seq.OnComplete(() =>
+        {
+            if (this != null && gameObject != null)
+                Destroy(gameObject);
+        });
+
+        activeTween = seq;
     }
 
     private void OnDestroy()

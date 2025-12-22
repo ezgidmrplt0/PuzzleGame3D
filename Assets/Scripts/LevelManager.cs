@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using TMPro;
 using UnityEngine.UI;
+using DG.Tweening;
 
 public class LevelManager : MonoBehaviour
 {
@@ -22,18 +23,13 @@ public class LevelManager : MonoBehaviour
 
     [Header("Camera Settings")]
     [SerializeField] private Camera mainCamera;
-    [SerializeField] private float baseFOV = 45f;       // Reduced from 60f
-    [SerializeField] private float zoomOutPerSlot = 2f; // Reduced from 5f
-    [SerializeField] private float sidePadding = 0.5f;  // Reduced from 1.0f
+    [SerializeField] private float baseFOV = 45f;
+    [SerializeField] private float zoomOutPerSlot = 2f;
+    [SerializeField] private float sidePadding = 0.5f;
 
     [Header("UI - Buttons")]
-    [Tooltip("Pause/Resume butonu")]
     [SerializeField] private Button pauseButton;
-
-    [Tooltip("Restart butonu")]
     [SerializeField] private Button restartButton;
-
-    [Tooltip("Pause butonundaki ikon veya yazı (opsiyonel). Örn '||' ve '>' arasında değiştir")]
     [SerializeField] private TMP_Text pauseButtonLabel;
 
     [Header("UI - Lives (RawImage Hearts)")]
@@ -46,6 +42,17 @@ public class LevelManager : MonoBehaviour
 
     [Header("Timer Rule")]
     [SerializeField] private int fixedLevelSeconds = 30;
+
+    // ✅ NEW: 10 sec shake
+    [Header("Time Warning Shake (Cosmetic)")]
+    [SerializeField] private bool enableTimeWarningShake = true;
+    [SerializeField] private int warningAtSeconds = 10;
+    [SerializeField] private float warningShakeDuration = 0.25f;
+    [SerializeField] private float warningShakeStrength = 0.15f;
+    [SerializeField] private int warningShakeVibrato = 18;
+
+    private Tween warningShakeTween;
+    private bool warningTriggered;
 
     private int currentLevel;
     private int currentLives;
@@ -84,6 +91,9 @@ public class LevelManager : MonoBehaviour
         if (restartButton) restartButton.onClick.RemoveListener(RestartLevel);
 
         Time.timeScale = 1f;
+
+        if (warningShakeTween != null && warningShakeTween.IsActive()) warningShakeTween.Kill();
+        warningShakeTween = null;
     }
 
     private void Start()
@@ -102,6 +112,12 @@ public class LevelManager : MonoBehaviour
         {
             timeLeft -= Time.deltaTime;
 
+            if (enableTimeWarningShake && !warningTriggered && timeLeft <= warningAtSeconds && timeLeft > 0f)
+            {
+                warningTriggered = true;
+                PlayTimeWarningShake();
+            }
+
             if (timeLeft <= 0f)
             {
                 timeLeft = 0f;
@@ -112,6 +128,24 @@ public class LevelManager : MonoBehaviour
 
             RefreshUI_TimerOnly();
         }
+    }
+
+    private void PlayTimeWarningShake()
+    {
+        if (!mainCamera) mainCamera = Camera.main;
+        if (!mainCamera) return;
+
+        if (warningShakeTween != null && warningShakeTween.IsActive())
+            warningShakeTween.Kill();
+
+        warningShakeTween = mainCamera.transform.DOShakePosition(
+            warningShakeDuration,
+            warningShakeStrength,
+            warningShakeVibrato,
+            90f,
+            false,
+            true
+        );
     }
 
     // ================= BUTTON API =================
@@ -177,7 +211,6 @@ public class LevelManager : MonoBehaviour
         isPaused = false;
         SetPauseLabel(false);
 
-        // Hide panels on start
         if (winPanel) winPanel.SetActive(false);
         if (losePanel) losePanel.SetActive(false);
 
@@ -197,6 +230,15 @@ public class LevelManager : MonoBehaviour
 
         slotManager.SetInputEnabled(true);
 
+        // ✅ apply inversion
+        if (slotManager)
+            slotManager.SetSwipeInversion(cfg.invertHorizontalSwipe, cfg.invertVerticalSwipe);
+
+        // ✅ reset warning
+        warningTriggered = false;
+        if (warningShakeTween != null && warningShakeTween.IsActive()) warningShakeTween.Kill();
+        warningShakeTween = null;
+
         if (slotManager)
         {
             slotManager.SetupGrid(cfg.slotsPerZone);
@@ -215,8 +257,8 @@ public class LevelManager : MonoBehaviour
         slotManager.SetInputEnabled(false);
 
         if (stateText) stateText.text = "";
-        
-        if (winPanel) 
+
+        if (winPanel)
         {
             winPanel.SetActive(true);
             if (winText) winText.text = "LEVEL\nCOMPLETED!";
@@ -230,8 +272,8 @@ public class LevelManager : MonoBehaviour
         slotManager.SetInputEnabled(false);
 
         if (stateText) stateText.text = "";
-        
-        if (losePanel) 
+
+        if (losePanel)
         {
             losePanel.SetActive(true);
             if (loseText) loseText.text = $"FAILED\n{reason}";
@@ -318,8 +360,8 @@ public class LevelManager : MonoBehaviour
         float spacing = 1.6f;
 
         float wallHalfLength = ((slotsPerZone - 1) * spacing * 0.5f) + 0.8f;
-        
-        float pad = sidePadding; // Use the padding variable
+
+        float pad = sidePadding;
         float boundX = Mathf.Max(startDist + 0.8f, wallHalfLength);
         float boundZ = Mathf.Max(startDist + 0.8f, wallHalfLength);
 
@@ -341,7 +383,7 @@ public class LevelManager : MonoBehaviour
             float aspect = mainCamera.aspect;
             if (aspect < 1.0f)
             {
-                mainCamera.fieldOfView += (1.0f / aspect) * 2f; 
+                mainCamera.fieldOfView += (1.0f / aspect) * 2f;
             }
         }
     }
