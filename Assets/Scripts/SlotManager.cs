@@ -106,6 +106,10 @@ public class SlotManager : MonoBehaviour
     private readonly Dictionary<Transform, Tween> slotIdleTweens = new Dictionary<Transform, Tween>();
     private readonly Dictionary<FallingPiece, Tween> pieceIdleTweens = new Dictionary<FallingPiece, Tween>();
 
+    // ✅ base scale snapshot (idle wiggle sonrası geri dönmek için)
+    private readonly Dictionary<Transform, Vector3> slotIdleBaseScales = new Dictionary<Transform, Vector3>();
+    private readonly Dictionary<FallingPiece, Vector3> pieceIdleBaseScales = new Dictionary<FallingPiece, Vector3>();
+
     // Pulse (global)
     private Coroutine pulseRoutine;
     private Sequence globalPulseSeq;
@@ -253,7 +257,6 @@ public class SlotManager : MonoBehaviour
         {
             if (kv.Value != null && kv.Value.IsActive())
                 kv.Value.Kill();
-            if (kv.Key) kv.Key.localScale = Vector3.one;
         }
         slotIdleTweens.Clear();
 
@@ -261,9 +264,21 @@ public class SlotManager : MonoBehaviour
         {
             if (kv.Value != null && kv.Value.IsActive())
                 kv.Value.Kill();
-            if (kv.Key) kv.Key.transform.localScale = Vector3.one;
         }
         pieceIdleTweens.Clear();
+
+        // ✅ base scale’e dön
+        foreach (var kv in slotIdleBaseScales)
+        {
+            if (kv.Key) kv.Key.localScale = kv.Value;
+        }
+        slotIdleBaseScales.Clear();
+
+        foreach (var kv in pieceIdleBaseScales)
+        {
+            if (kv.Key) kv.Key.transform.localScale = kv.Value;
+        }
+        pieceIdleBaseScales.Clear();
     }
 
     private void WiggleSlots(Transform origin)
@@ -276,7 +291,13 @@ public class SlotManager : MonoBehaviour
             if (!slot) continue;
             if (slotIdleTweens.ContainsKey(slot)) continue;
 
-            Tween t = slot.DOScale(Vector3.one * (1f + slotWiggleStrength), slotWiggleDuration * 0.5f)
+            // ✅ gerçek başlangıç scale snapshot
+            if (!slotIdleBaseScales.ContainsKey(slot))
+                slotIdleBaseScales[slot] = slot.localScale;
+
+            Vector3 baseScale = slotIdleBaseScales[slot];
+
+            Tween t = slot.DOScale(baseScale * (1f + slotWiggleStrength), slotWiggleDuration * 0.5f)
                 .SetEase(Ease.InOutSine)
                 .SetLoops(-1, LoopType.Yoyo);
 
@@ -295,7 +316,13 @@ public class SlotManager : MonoBehaviour
                 if (!p) continue;
                 if (pieceIdleTweens.ContainsKey(p)) continue;
 
-                Tween t = p.transform.DOScale(Vector3.one * (1f + pieceWiggleStrength), pieceWiggleDuration * 0.5f)
+                // ✅ gerçek başlangıç scale snapshot
+                if (!pieceIdleBaseScales.ContainsKey(p))
+                    pieceIdleBaseScales[p] = p.transform.localScale;
+
+                Vector3 baseScale = pieceIdleBaseScales[p];
+
+                Tween t = p.transform.DOScale(baseScale * (1f + pieceWiggleStrength), pieceWiggleDuration * 0.5f)
                     .SetEase(Ease.InOutSine)
                     .SetLoops(-1, LoopType.Yoyo);
 
@@ -432,7 +459,6 @@ public class SlotManager : MonoBehaviour
         });
     }
 
-
     // ================= Freeze Loop =================
 
     private void StartFreezeRoutineIfNeeded()
@@ -489,6 +515,9 @@ public class SlotManager : MonoBehaviour
     {
         if (frozenSlots.ContainsKey(slot)) return;
 
+        // ✅ shake sonrası base scale’e dön
+        Vector3 baseScale = slot.localScale;
+
         var rend = slot.GetComponent<Renderer>();
         if (rend)
         {
@@ -498,11 +527,18 @@ public class SlotManager : MonoBehaviour
             if (iceSlotTexture != null)
                 rend.material.mainTexture = iceSlotTexture;
 
-            slot.DOShakeScale(0.3f, 0.2f);
+            slot.DOShakeScale(0.3f, 0.2f).OnComplete(() =>
+            {
+                if (slot) slot.localScale = baseScale;
+            });
         }
         else
         {
             frozenSlots[slot] = new SlotVisualState(Color.white, null);
+            slot.DOShakeScale(0.3f, 0.2f).OnComplete(() =>
+            {
+                if (slot) slot.localScale = baseScale;
+            });
         }
 
         MarkActivity();
@@ -559,6 +595,23 @@ public class SlotManager : MonoBehaviour
         }
     }
 
+    // ✅ helper: bir zone'da frozen olmayan slot sayısı
+    private int GetNonFrozenSlotCount(Direction d)
+    {
+        Transform origin = GetOrigin(d);
+        if (!origin) return 0;
+
+        int count = 0;
+        for (int i = 0; i < origin.childCount; i++)
+        {
+            Transform s = origin.GetChild(i);
+            if (!s) continue;
+            if (frozenSlots.ContainsKey(s)) continue;
+            count++;
+        }
+        return count;
+    }
+
     private System.Collections.IEnumerator ShuffleContentsOnce()
     {
         if (isShuffling) yield break;
@@ -577,20 +630,71 @@ public class SlotManager : MonoBehaviour
         Direction[] fromDirs = (Direction[])dirs.Clone();
         Direction[] toDirs = (Direction[])dirs.Clone();
 
-        for (int i = toDirs.Length - 1; i > 0; i--)
+        // ✅ ÜST ÜSTE BİNME FIX:
+        // Frozen slotlar yüzünden hedef zone'da "available slot" < "piece count" olursa parçalar parentsiz kalıp üst üste binebiliyordu.
+        // Bu yüzden permutation'ı, her zone için newCount <= nonFrozenSlotCount şartı sağlanana kadar deniyoruz.
+        const int maxPermutationTries = 25;
+        bool foundFeasible = false;
+
+        for (int attempt = 0; attempt < maxPermutationTries; attempt++)
         {
-            int j = UnityEngine.Random.Range(0, i + 1);
-            (toDirs[i], toDirs[j]) = (toDirs[j], toDirs[i]);
+            // shuffle toDirs
+            for (int i = toDirs.Length - 1; i > 0; i--)
+            {
+                int j = UnityEngine.Random.Range(0, i + 1);
+                (toDirs[i], toDirs[j]) = (toDirs[j], toDirs[i]);
+            }
+
+            bool anyDiff = false;
+            for (int i = 0; i < fromDirs.Length; i++)
+            {
+                if (fromDirs[i] != toDirs[i]) { anyDiff = true; break; }
+            }
+            if (!anyDiff)
+            {
+                (toDirs[0], toDirs[1], toDirs[2], toDirs[3]) = (toDirs[1], toDirs[2], toDirs[3], toDirs[0]);
+            }
+
+            // tentative counts
+            Dictionary<Direction, int> tentativeCounts = new Dictionary<Direction, int>
+            {
+                { Direction.Up, 0 },
+                { Direction.Down, 0 },
+                { Direction.Left, 0 },
+                { Direction.Right, 0 }
+            };
+
+            for (int i = 0; i < fromDirs.Length; i++)
+            {
+                Direction from = fromDirs[i];
+                Direction to = toDirs[i];
+                tentativeCounts[to] += grid[from].Count;
+            }
+
+            bool ok = true;
+            foreach (var d in dirs)
+            {
+                int capacityNonFrozen = GetNonFrozenSlotCount(d);
+                if (tentativeCounts[d] > capacityNonFrozen)
+                {
+                    ok = false;
+                    break;
+                }
+            }
+
+            if (ok)
+            {
+                foundFeasible = true;
+                break;
+            }
         }
 
-        bool anyDiff = false;
-        for (int i = 0; i < fromDirs.Length; i++)
+        // uygun permutation bulunamazsa bu tur shuffle’ı pas geç (parça koparma yok, üst üste binme yok)
+        if (!foundFeasible)
         {
-            if (fromDirs[i] != toDirs[i]) { anyDiff = true; break; }
-        }
-        if (!anyDiff)
-        {
-            (toDirs[0], toDirs[1], toDirs[2], toDirs[3]) = (toDirs[1], toDirs[2], toDirs[3], toDirs[0]);
+            inputEnabled = prevInput;
+            isShuffling = false;
+            yield break;
         }
 
         var newGrid = new Dictionary<Direction, List<FallingPiece>>
@@ -633,6 +737,7 @@ public class SlotManager : MonoBehaviour
                 Transform s = origin.GetChild(i);
                 if (!s) continue;
                 if (frozenSlots.ContainsKey(s)) continue;
+                // shuffle sırasında zaten parçaları kopardığımız için burada kontrol ekstra ama kalsın
                 if (s.GetComponentInChildren<FallingPiece>() != null) continue;
                 availableSlots.Add(s);
             }
@@ -648,6 +753,8 @@ public class SlotManager : MonoBehaviour
 
                 Transform targetSlot = availableSlots[i];
 
+                // parent set etmeyi tween sonunda yapmıyoruz çünkü senin mevcut mantığında
+                // slot index/zone ilişkisi parent ile kullanılıyor. Aynı davranışı koruyoruz.
                 p.transform.SetParent(targetSlot, true);
                 seq.Join(p.transform.DOMove(targetSlot.position, shuffleMoveDuration).SetEase(shuffleEase));
             }

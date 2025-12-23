@@ -91,7 +91,14 @@ public class FallingPiece : MonoBehaviour
     public void TakeDamage()
     {
         freezeHealth--;
-        transform.DOShakeScale(0.15f, 0.2f);
+
+        // ✅ shake sonrası base scale’e dön (bitişte)
+        Vector3 baseScale = transform.localScale;
+        transform.DOShakeScale(0.15f, 0.2f).OnComplete(() =>
+        {
+            if (this != null && transform != null)
+                transform.localScale = baseScale;
+        });
     }
 
     public void TweenToSlot(Transform targetSlot, float duration, Ease ease, System.Action onComplete = null)
