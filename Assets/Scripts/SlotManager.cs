@@ -1075,15 +1075,27 @@ public class SlotManager : MonoBehaviour
         int capacity = origin.childCount;
         if (list.Count < capacity) return;
 
-        Color targetColor = list[0].GetNormalColor();
+        string targetKey = list[0] != null ? list[0].GetPieceKey() : null;
+        Color targetColorFallback = list[0] != null ? list[0].GetNormalColor() : Color.white;
 
         foreach (var p in list)
         {
             if (p.isFrozen) return;
-            if (p.GetNormalColor() != targetColor) return;
+
+            // Prefer prefab/type key matching; fallback to color if key is not set.
+            if (!string.IsNullOrEmpty(targetKey))
+            {
+                if (p.GetPieceKey() != targetKey) return;
+            }
+            else
+            {
+                if (p.GetNormalColor() != targetColorFallback) return;
+            }
         }
 
-        Debug.Log($"[CheckMatch3] MATCHED! Color: {targetColor}.");
+        Debug.Log(!string.IsNullOrEmpty(targetKey)
+            ? $"[CheckMatch3] MATCHED! Type: {targetKey}."
+            : $"[CheckMatch3] MATCHED! Color: {targetColorFallback}.");
         MarkActivity();
         OnMatch3?.Invoke();
 

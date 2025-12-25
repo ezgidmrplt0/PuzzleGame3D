@@ -3,6 +3,7 @@ using DG.Tweening;
 
 public class FallingPiece : MonoBehaviour
 {
+    public string pieceKey { get; private set; }
     public bool isFake { get; private set; }
     public bool isFrozen { get; private set; }
     public int freezeHealth { get; private set; } = 3;
@@ -53,6 +54,13 @@ public class FallingPiece : MonoBehaviour
     }
 
     public Color GetNormalColor() => normalColor;
+
+    public void SetPieceKey(string key)
+    {
+        pieceKey = key;
+    }
+
+    public string GetPieceKey() => pieceKey;
 
     public void SetFake(bool fake)
     {

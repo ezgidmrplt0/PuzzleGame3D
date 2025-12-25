@@ -10,26 +10,13 @@ public class Spawner : MonoBehaviour
     [Header("Spawn Point")]
     [SerializeField] private Transform spawnPoint;
 
-    [Header("Piece Pool (Tüm Objeler) - ARTIK 1 PREFAB YETERLİ")]
-    [Tooltip("Bu listede artık tek prefab kullanabilirsiniz. (Tek obje)")]
+    [Header("Piece Pool (Prefabs)")]
+    [Tooltip("Buraya spawn edilmesini istediğin prefab'ları ekle. Spawner bu listeden rastgele seçer.")]
     [SerializeField] private List<GameObject> availablePieces;
 
     [Header("Level Configs (Difficulty Only)")]
     [Tooltip("Buradan Level 1, Level 2 gibi özel zorluk ayarları yapabilirsiniz. Obje seçimi otomatik olur.")]
     [SerializeField] private List<LevelConfig> levels = new List<LevelConfig>();
-
-    [Header("Color Palette (Normal Piece Colors)")]
-    [Tooltip("Normal parçanın alabileceği renk paleti. pieceTypeCount kadarını kullanır (örn 3 => ilk 3 renk).")]
-    [SerializeField]
-    private List<Color> colorPalette = new List<Color>()
-    {
-        Color.red,
-        Color.green,
-        Color.blue,
-        Color.yellow,
-        new Color(1f, 0.2f, 1f),
-        Color.cyan
-    };
 
     [Header("Runtime")]
     [Min(1)]
@@ -46,8 +33,9 @@ public class Spawner : MonoBehaviour
         public int timeLimitSeconds = 60;
         [Range(0, 100)] public float fakeChance = 20f;
 
-        [Header("Çeşitlilik (RENK SAYISI)")]
-        [Range(1, 6)] public int pieceTypeCount = 3;
+        [Header("Çeşitlilik (Prefab Sayısı)")]
+        [Tooltip("Bu level'da kaç farklı prefab kullanılacağını belirler. AvailablePieces'tan seçilir.")]
+        [Min(1)] public int pieceTypeCount = 3;
 
         [Header("Grid Yapısı")]
         [Range(1, 4)] public int slotsPerZone = 1;
@@ -176,8 +164,7 @@ public class Spawner : MonoBehaviour
         if (availablePieces != null && availablePieces.Count > 0)
         {
             int totalAvailable = availablePieces.Count;
-            int typeCountToUse = 1; // tek prefab
-            typeCountToUse = Mathf.Clamp(typeCountToUse, 1, totalAvailable);
+            int typeCountToUse = Mathf.Clamp(cfg.pieceTypeCount, 1, totalAvailable);
 
             List<GameObject> pool = new List<GameObject>(availablePieces);
             Shuffle(pool);
@@ -185,13 +172,48 @@ public class Spawner : MonoBehaviour
             for (int i = 0; i < typeCountToUse; i++)
             {
                 if (pool[i] != null)
-                    cfg.spawns.Add(new SpawnEntry { prefab = pool[i], count = 100 });
+                    cfg.spawns.Add(new SpawnEntry { prefab = pool[i], count = 1 });
             }
         }
         else
         {
             Debug.LogError("[Spawner] ERROR: No pieces in 'Available Pieces' pool!");
         }
+    }
+
+    private SpawnEntry PickWeighted(List<SpawnEntry> entries)
+    {
+        if (entries == null || entries.Count == 0) return null;
+
+        int total = 0;
+        for (int i = 0; i < entries.Count; i++)
+        {
+            if (entries[i] == null || entries[i].prefab == null) continue;
+            total += Mathf.Max(0, entries[i].count);
+        }
+
+        // all counts are 0 or invalid -> fallback uniform
+        if (total <= 0)
+        {
+            var valid = new List<SpawnEntry>();
+            for (int i = 0; i < entries.Count; i++)
+                if (entries[i] != null && entries[i].prefab != null) valid.Add(entries[i]);
+
+            if (valid.Count == 0) return null;
+            return valid[UnityEngine.Random.Range(0, valid.Count)];
+        }
+
+        int roll = UnityEngine.Random.Range(0, total);
+        int acc = 0;
+        for (int i = 0; i < entries.Count; i++)
+        {
+            var e = entries[i];
+            if (e == null || e.prefab == null) continue;
+            acc += Mathf.Max(0, e.count);
+            if (roll < acc) return e;
+        }
+
+        return null;
     }
 
     public void StartLevel(int level)
@@ -218,7 +240,8 @@ public class Spawner : MonoBehaviour
         var cfg = GetLevelConfig(currentLevel);
         if (cfg == null || cfg.spawns.Count == 0) yield break;
 
-        var randomEntry = cfg.spawns[UnityEngine.Random.Range(0, cfg.spawns.Count)];
+        var randomEntry = PickWeighted(cfg.spawns);
+        if (randomEntry == null) yield break;
         GameObject prefab = randomEntry.prefab;
         if (prefab == null) yield break;
 
@@ -232,17 +255,8 @@ public class Spawner : MonoBehaviour
         FallingPiece fp = go.GetComponent<FallingPiece>();
         if (!fp) fp = go.AddComponent<FallingPiece>();
 
-        // Renk ata (normal)
-        int paletteCount = (colorPalette != null) ? colorPalette.Count : 0;
-        int colorCountToUse = Mathf.Clamp(cfg.pieceTypeCount, 1, Mathf.Max(1, paletteCount));
-
-        Color chosen = Color.white;
-        if (paletteCount > 0)
-        {
-            int idx = UnityEngine.Random.Range(0, colorCountToUse);
-            chosen = colorPalette[idx];
-        }
-        fp.SetNormalColor(chosen);
+        // Prefab tipi (match için anahtar)
+        fp.SetPieceKey(prefab.name);
 
         // Fake
         bool isFake = UnityEngine.Random.value * 100f < cfg.fakeChance;
