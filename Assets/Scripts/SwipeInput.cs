@@ -1,15 +1,16 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System;
 
 public class SwipeInput : MonoBehaviour
 {
-    public static event Action<Direction> OnSwipe; // Up, Down, Left, Right
-    public static event Action<Vector2> OnTap;
+    public static event Action<Direction> OnSwipe;       // Up, Down, Left, Right
+    public static event Action<Vector2> OnTap;           // screen pos
+    public static event Action<Vector2, Vector2> OnDragEnd; // (startScreenPos, endScreenPos)
 
     [Header("Settings")]
     [SerializeField] private float minSwipeDistance = 50f;
-    [SerializeField] private float tapThreshold = 0.2f; // Seconds
-    [SerializeField] private float maxTapMovement = 20f; // Pixels
+    [SerializeField] private float tapThreshold = 0.2f;     // Seconds
+    [SerializeField] private float maxTapMovement = 20f;    // Pixels
 
     private Vector2 startPos;
     private float startTime;
@@ -25,7 +26,12 @@ public class SwipeInput : MonoBehaviour
         }
         else if (Input.GetMouseButtonUp(0) && isTouching)
         {
-            HandleInput(Input.mousePosition);
+            Vector2 endPos = Input.mousePosition;
+
+            // ✅ önce drag end bildir (joker drop vs burada çözülecek)
+            OnDragEnd?.Invoke(startPos, endPos);
+
+            HandleInput(endPos);
             isTouching = false;
         }
     }
@@ -39,7 +45,6 @@ public class SwipeInput : MonoBehaviour
         // TAP
         if (timeDelta < tapThreshold && distance < maxTapMovement)
         {
-            Debug.Log("[Input] Tap Detected");
             OnTap?.Invoke(endPos);
             return;
         }

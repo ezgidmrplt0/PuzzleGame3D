@@ -4,7 +4,10 @@ using DG.Tweening;
 public class FallingPiece : MonoBehaviour
 {
     public string pieceKey { get; private set; }
-    public bool isFake { get; private set; }
+    public bool isJoker { get; private set; }  // ✅ NEW
+
+    // eski alanlar kalsın (projede başka yerler referans veriyorsa patlamasın)
+    public bool isFake { get; private set; }   // artık kullanılmıyor
     public bool isFrozen { get; private set; }
     public int freezeHealth { get; private set; } = 3;
 
@@ -15,12 +18,7 @@ public class FallingPiece : MonoBehaviour
     [SerializeField] private Texture iceTexture;
     [SerializeField] private Color iceColor = Color.cyan;
 
-    [Header("Fake Visuals")]
-    [SerializeField] private Texture fakeTexture;
-    [SerializeField] private Color fakeColor = Color.white;
-
     private MeshRenderer meshRenderer;
-
     private Color normalColor = Color.white;
     private Texture normalTexture = null;
 
@@ -47,6 +45,16 @@ public class FallingPiece : MonoBehaviour
         RefreshVisualState();
     }
 
+    public void SetPieceKey(string key) => pieceKey = key;
+    public string GetPieceKey() => pieceKey;
+
+    public void SetJoker(bool joker)
+    {
+        isJoker = joker;
+        // jokerin frozen/fake gibi görünmesini istemiyorsan burada özel material verirsin
+        RefreshVisualState();
+    }
+
     public void SetNormalColor(Color c)
     {
         normalColor = c;
@@ -55,14 +63,7 @@ public class FallingPiece : MonoBehaviour
 
     public Color GetNormalColor() => normalColor;
 
-    public void SetPieceKey(string key)
-    {
-        pieceKey = key;
-    }
-
-    public string GetPieceKey() => pieceKey;
-
-    public void SetFake(bool fake)
+    public void SetFake(bool fake) // artık kullanılmıyor
     {
         isFake = fake;
         RefreshVisualState();
@@ -84,11 +85,6 @@ public class FallingPiece : MonoBehaviour
             meshRenderer.material.color = iceColor;
             meshRenderer.material.mainTexture = (iceTexture != null) ? iceTexture : normalTexture;
         }
-        else if (isFake)
-        {
-            meshRenderer.material.color = fakeColor;
-            meshRenderer.material.mainTexture = (fakeTexture != null) ? fakeTexture : normalTexture;
-        }
         else
         {
             meshRenderer.material.color = normalColor;
@@ -100,7 +96,6 @@ public class FallingPiece : MonoBehaviour
     {
         freezeHealth--;
 
-        // ✅ shake sonrası base scale’e dön (bitişte)
         Vector3 baseScale = transform.localScale;
         transform.DOShakeScale(0.15f, 0.2f).OnComplete(() =>
         {
@@ -133,7 +128,6 @@ public class FallingPiece : MonoBehaviour
             });
     }
 
-    // ✅ MATCH: balon gibi küçülüp yok olma (büyüme yok)
     public void PlayMatchShrinkAndDestroy(float duration, float shrinkScaleMultiplier)
     {
         if (activeTween != null && activeTween.IsActive()) activeTween.Kill();

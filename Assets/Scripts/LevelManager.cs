@@ -43,7 +43,6 @@ public class LevelManager : MonoBehaviour
     [Header("Timer Rule")]
     [SerializeField] private int fixedLevelSeconds = 30;
 
-    // ✅ NEW: 10 sec shake
     [Header("Time Warning Shake (Cosmetic)")]
     [SerializeField] private bool enableTimeWarningShake = true;
     [SerializeField] private int warningAtSeconds = 10;
@@ -148,8 +147,6 @@ public class LevelManager : MonoBehaviour
         );
     }
 
-    // ================= BUTTON API =================
-
     public void TogglePause()
     {
         if (!isRunning) return;
@@ -190,8 +187,6 @@ public class LevelManager : MonoBehaviour
         pauseButtonLabel.text = paused ? "▶" : "❚❚";
     }
 
-    // ================= GAME FLOW =================
-
     public void ReduceLife()
     {
         if (!isRunning || isPaused) return;
@@ -230,11 +225,9 @@ public class LevelManager : MonoBehaviour
 
         slotManager.SetInputEnabled(true);
 
-        // ✅ apply inversion
         if (slotManager)
             slotManager.SetSwipeInversion(cfg.invertHorizontalSwipe, cfg.invertVerticalSwipe);
 
-        // ✅ reset warning
         warningTriggered = false;
         if (warningShakeTween != null && warningShakeTween.IsActive()) warningShakeTween.Kill();
         warningShakeTween = null;
@@ -242,6 +235,8 @@ public class LevelManager : MonoBehaviour
         if (slotManager)
         {
             slotManager.SetupGrid(cfg.slotsPerZone);
+
+            // ✅ ARTIK KAMERA OYNAMIYOR
             UpdateCamera(cfg.slotsPerZone);
         }
 
@@ -294,8 +289,6 @@ public class LevelManager : MonoBehaviour
         if (matchesDone >= targetMatches)
             Win();
     }
-
-    // ================= UI =================
 
     private void RefreshUI_All()
     {
@@ -351,40 +344,11 @@ public class LevelManager : MonoBehaviour
         timerText.text = $"{min:00}:{sec:00}";
     }
 
+    // ✅ KAMERA FIX: SEN NASIL AYARLADIYSAN ÖYLE KALSIN
     private void UpdateCamera(int slotsPerZone)
     {
-        if (!mainCamera) mainCamera = Camera.main;
-        if (!mainCamera) return;
-
-        float startDist = 2.2f;
-        float spacing = 1.6f;
-
-        float wallHalfLength = ((slotsPerZone - 1) * spacing * 0.5f) + 0.8f;
-
-        float pad = sidePadding;
-        float boundX = Mathf.Max(startDist + 0.8f, wallHalfLength);
-        float boundZ = Mathf.Max(startDist + 0.8f, wallHalfLength);
-
-        float maxExtent = Mathf.Max(boundX, boundZ);
-        maxExtent += pad;
-
-        if (mainCamera.orthographic)
-        {
-            float aspect = mainCamera.aspect;
-            float requiredHeight = maxExtent / aspect;
-            mainCamera.orthographicSize = Mathf.Max(maxExtent, requiredHeight);
-        }
-        else
-        {
-            float extraZoom = (slotsPerZone - 1) * zoomOutPerSlot;
-
-            mainCamera.fieldOfView = baseFOV + extraZoom;
-
-            float aspect = mainCamera.aspect;
-            if (aspect < 1.0f)
-            {
-                mainCamera.fieldOfView += (1.0f / aspect) * 2f;
-            }
-        }
+        // Bilerek boş: otomatik zoom/FOV/orthoSize yok.
+        // Kamera ayarları Inspector'da nasıl set ise öyle kalır.
+        return;
     }
 }
