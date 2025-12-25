@@ -245,7 +245,7 @@ public class Spawner : MonoBehaviour
         GameObject prefab = randomEntry.prefab;
         if (prefab == null) yield break;
 
-        GameObject go = Instantiate(prefab, spawnPoint.position, Quaternion.Euler(90, 0, 90));
+        GameObject go = Instantiate(prefab, spawnPoint.position, Quaternion.Euler(0, 0, 0));
 
         Rigidbody rb = go.GetComponent<Rigidbody>();
         if (!rb) rb = go.AddComponent<Rigidbody>();

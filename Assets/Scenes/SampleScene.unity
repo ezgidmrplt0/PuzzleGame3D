@@ -2178,8 +2178,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   spawnPoint: {fileID: 687155734}
   availablePieces:
-  - {fileID: 5513527933461600514, guid: a0b9607e2610b30428ddbd27f0ab0b99, type: 3}
-  - {fileID: 6633806230971410539, guid: 59cd3d21de9c6a94aa90763bddd6f669, type: 3}
+  - {fileID: 1354996048308653523, guid: 1cf3100c462ea34b1871e3f657beba80, type: 3}
+  - {fileID: 4040989165085685345, guid: 639d9f51e2b02ba828c3a970f02a1ad5, type: 3}
   levels:
   - targetMatches: 3
     timeLimitSeconds: 60
