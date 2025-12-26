@@ -518,20 +518,26 @@ public class SlotManager : MonoBehaviour
 
     private void StartFreezeRoutineIfNeeded()
     {
+        /*
         if (!enableFrozenSlots) return;
         if (freezeRoutine != null) StopCoroutine(freezeRoutine);
         freezeRoutine = StartCoroutine(FrozenSlotLoop());
+        */
     }
 
     private void StopFreezeRoutine()
     {
+        /*
         if (freezeRoutine != null)
         {
             StopCoroutine(freezeRoutine);
             freezeRoutine = null;
         }
+        */
     }
 
+    // Random Freezing Removed as per new design
+    /*
     private System.Collections.IEnumerator FrozenSlotLoop()
     {
         while (enableFrozenSlots)
@@ -543,6 +549,7 @@ public class SlotManager : MonoBehaviour
                 TryFreezeRandomSlot();
         }
     }
+    */
 
     private void TryFreezeRandomSlot()
     {

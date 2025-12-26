@@ -29,6 +29,11 @@ public class JokerSpawner : MonoBehaviour
         return false;
     }
 
+    public bool IsJokerPrefab(GameObject go)
+    {
+        return jokerPrefab != null && go == jokerPrefab;
+    }
+
     public void OnJokerTapped(FallingPiece joker)
     {
         // Joker tıklandı: Her yeri çöz

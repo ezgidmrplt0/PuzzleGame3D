@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using DG.Tweening;
 
 public class Spawner : MonoBehaviour
 {
@@ -24,6 +25,17 @@ public class Spawner : MonoBehaviour
 
     private FallingPiece currentCenterPiece;
     private LevelConfig currentLevelConfig;
+
+    public bool HasActivePiece() => currentCenterPiece != null;
+
+    public void DestroyCurrentPiece()
+    {
+        if (currentCenterPiece != null)
+        {
+            Destroy(currentCenterPiece.gameObject);
+            currentCenterPiece = null;
+        }
+    }
 
     [Serializable]
     public class LevelConfig
@@ -148,13 +160,75 @@ public class Spawner : MonoBehaviour
         return null;
     }
 
+    [Header("Visual Queue")]
+    [SerializeField] private Transform[] queuePoints; // Assign 3 arrows in inspector
+    [SerializeField] private float queueMoveDuration = 0.4f;
+
+    // We store the actual instantiated pieces currently waiting in line
+    private List<FallingPiece> visualQueue = new List<FallingPiece>();
+
     public void StartLevel(int level)
     {
         currentLevel = Mathf.Max(1, level);
         currentCenterPiece = null;
 
         currentLevelConfig = GetLevelConfig(currentLevel);
-        SpawnNextPiece();
+
+        // Clear existing visual queue
+        foreach (var p in visualQueue)
+            if (p) Destroy(p.gameObject);
+        visualQueue.Clear();
+
+        // Fill Visual Queue initially
+        if (queuePoints != null && queuePoints.Length > 0)
+        {
+            for (int i = 0; i < queuePoints.Length; i++)
+            {
+                SpawnAndAddToVisualQueue(i);
+            }
+        }
+
+        SpawnNextPiece(); // Moves first one to center
+    }
+
+    private void SpawnAndAddToVisualQueue(int targetIndex)
+    {
+        // Data prep
+        var cfg = GetLevelConfig(currentLevel);
+        if (cfg == null) return;
+        
+        GameObject prefab = null;
+        if (JokerSpawner.Instance != null && JokerSpawner.Instance.TryGetJoker(out GameObject jokerPrefab))
+            prefab = jokerPrefab;
+        else if (cfg.spawns != null && cfg.spawns.Count > 0)
+        {
+            var entry = PickWeighted(cfg.spawns);
+            if (entry != null) prefab = entry.prefab;
+        }
+
+        if (prefab == null) return;
+
+        // Instantiate at spawn point (or far away/offscreen)
+        // For simplicity, let's spawn directly at the target Queue Point
+        if (targetIndex >= queuePoints.Length) return;
+        Transform targetPt = queuePoints[targetIndex];
+
+        GameObject go = Instantiate(prefab, targetPt.position, targetPt.rotation); // Use point rotation
+
+        // Setup Piece
+        Rigidbody rb = go.GetComponent<Rigidbody>();
+        if (!rb) rb = go.AddComponent<Rigidbody>();
+        rb.useGravity = false;
+        rb.isKinematic = true;
+
+        FallingPiece fp = go.GetComponent<FallingPiece>();
+        if (!fp) fp = go.AddComponent<FallingPiece>();
+        
+        fp.SetPieceKey(prefab.name);
+        bool isJoker = (go.name.Contains("Joker") || (JokerSpawner.Instance && JokerSpawner.Instance.IsJokerPrefab(prefab)));
+        fp.SetJoker(isJoker);
+
+        visualQueue.Add(fp);
     }
 
     public void SpawnNextPiece()
@@ -164,48 +238,93 @@ public class Spawner : MonoBehaviour
 
     private IEnumerator SpawnSinglePieceRoutine()
     {
-        yield return new WaitForSeconds(0.05f);
+        // wait frame
+        yield return null;
 
         if (spawnPoint == null) yield break;
         if (currentCenterPiece != null) yield break;
 
-        var cfg = GetLevelConfig(currentLevel);
-        if (cfg == null) yield break;
-
-        // ✅ Joker spawn (Refactored)
-        GameObject prefab = null;
-        bool isJoker = false;
-
-        if (JokerSpawner.Instance != null && JokerSpawner.Instance.TryGetJoker(out GameObject jokerPrefab))
+        // 1. Take from front of Visual Queue
+        if (visualQueue.Count == 0)
         {
-            prefab = jokerPrefab;
-            isJoker = true;
-        }
-        else
-        {
-            if (cfg.spawns == null || cfg.spawns.Count == 0) yield break;
-            var entry = PickWeighted(cfg.spawns);
-            if (entry == null) yield break;
-            prefab = entry.prefab;
+             // Fallback if queue is empty (shouldn't happen if points are set)
+             // Force spawn one? Or just break.
+             // Let's force fill if empty
+             if (queuePoints != null && queuePoints.Length > 0) SpawnAndAddToVisualQueue(0);
+             if (visualQueue.Count == 0) yield break;
         }
 
-        if (prefab == null) yield break;
+        FallingPiece nextPiece = visualQueue[0];
+        visualQueue.RemoveAt(0);
 
-        GameObject go = Instantiate(prefab, spawnPoint.position, prefab.transform.rotation);
+        // 2. Move it to Center
+        // We use DOTween (FallingPiece has TweenToSlot, but here we just need Move)
+        // Or simpler: manually move. Let's use DOTween if available implicitly via FallingPiece logic or Spawner logic.
+        // Assuming FallingPiece has a Move method or we direct transform.
+        // We can just Tween it.
+        
+        // We want it to ANIMATE to the center spawn point.
+        // During animation, it is the "currentCenterPiece" technically?
+        // Or we set it after arrival. Let's set immediately to block logic.
+        currentCenterPiece = nextPiece;
+        
+        // Animasyon: Queue noktasından Center SpawnPoint'a
+        DG.Tweening.Sequence seq = DG.Tweening.DOTween.Sequence();
+        seq.Join(nextPiece.transform.DOMove(spawnPoint.position, queueMoveDuration).SetEase(DG.Tweening.Ease.OutQuad));
+        seq.Join(nextPiece.transform.DORotateQuaternion(spawnPoint.rotation, queueMoveDuration).SetEase(DG.Tweening.Ease.OutQuad));
+        
+        seq.OnComplete(() =>
+        {
+             // Animasyon bitince tam konumunu garantile (opsiyonel)
+        });
 
-        Rigidbody rb = go.GetComponent<Rigidbody>();
-        if (!rb) rb = go.AddComponent<Rigidbody>();
-        rb.useGravity = false;
-        rb.isKinematic = true;
+        OnPieceSpawned?.Invoke(nextPiece);
 
-        FallingPiece fp = go.GetComponent<FallingPiece>();
-        if (!fp) fp = go.AddComponent<FallingPiece>();
+        // 3. Shift others forward & Refill back
+        AdvanceVisualQueue();
+    }
 
-        fp.SetPieceKey(prefab.name);
-        fp.SetJoker(isJoker);
+    private void AdvanceVisualQueue()
+    {
+        if (queuePoints == null || visualQueue.Count == 0) 
+        {
+            // If empty, just spawn new at index 0
+            // But we should fill up to length
+            int currentCount = visualQueue.Count; // 0
+            if (queuePoints != null)
+            {
+                for(int i=currentCount; i<queuePoints.Length; i++) SpawnAndAddToVisualQueue(i);
+            }
+            return;
+        }
 
-        currentCenterPiece = fp;
-        OnPieceSpawned?.Invoke(fp);
+        // Shift existing items: 
+        // Index 0 moved to center (already removed from list).
+        // New Index 0 was previously at Point 1. Move it to Point 0.
+        // New Index k was previously at Point k+1. Move it to Point k.
+        
+        for (int i = 0; i < visualQueue.Count; i++)
+        {
+            FallingPiece fp = visualQueue[i];
+            if (i < queuePoints.Length)
+            {
+                Transform targetPt = queuePoints[i];
+                fp.transform.DOMove(targetPt.position, queueMoveDuration).SetEase(DG.Tweening.Ease.OutQuad);
+                fp.transform.DORotateQuaternion(targetPt.rotation, queueMoveDuration).SetEase(DG.Tweening.Ease.OutQuad);
+            }
+        }
+
+        // Spawn new at the end
+        // visualQueue.Count is currently (Max - 1) (if full before)
+        // So we add at index = visualQueue.Count
+        if (visualQueue.Count < queuePoints.Length)
+        {
+            SpawnAndAddToVisualQueue(visualQueue.Count);
+            // The newly added one is at index LAST provided by Add method?
+            // Wait, SpawnAndAddToVisualQueue(i) instantiates at that point.
+            // visualQueue.Add puts it at end.
+            // Correct.
+        }
     }
 
     public void NotifyCenterCleared(FallingPiece piece)

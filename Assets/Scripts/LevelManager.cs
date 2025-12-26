@@ -103,29 +103,65 @@ public class LevelManager : MonoBehaviour
         StartLevel(startLevel);
     }
 
+    [Header("Car Timer")]
+    [SerializeField] private float carTimeLimit = 3.0f;
+    private float currentCarTimer;
+
     private void Update()
     {
         if (!isRunning || isPaused) return;
 
+        // Global Level Timer (Optional - Disabled for now to focus on Car Timer)
+        /*
         if (useTimer)
         {
             timeLeft -= Time.deltaTime;
+            // ... (old logic)
+        }
+        */
 
-            if (enableTimeWarningShake && !warningTriggered && timeLeft <= warningAtSeconds && timeLeft > 0f)
+        // ✅ 3-SECOND CAR TIMER
+        if (spawner && spawner.HasActivePiece())
+        {
+            currentCarTimer -= Time.deltaTime;
+
+            if (enableTimeWarningShake && !warningTriggered && currentCarTimer <= 1.0f && currentCarTimer > 0f)
             {
-                warningTriggered = true;
-                PlayTimeWarningShake();
+               // Son 1 saniye kala titret (opsiyonel)
+               // warningTriggered = true;
+               // PlayTimeWarningShake(); 
             }
 
-            if (timeLeft <= 0f)
-            {
-                timeLeft = 0f;
-                RefreshUI_TimerOnly();
-                Lose("TIME UP!");
-                return;
-            }
+            // Update UI (Reuse timerText or add new one. I'll reuse timerText for now)
+            if (timerText) 
+                timerText.text = $"{currentCarTimer:0.0}s";
 
-            RefreshUI_TimerOnly();
+            if (currentCarTimer <= 0f)
+            {
+                currentCarTimer = carTimeLimit; // Reset for safety
+                HandleCarTimeout();
+            }
+        }
+        else
+        {
+            // Araba yoksa sayaç reset
+            currentCarTimer = carTimeLimit;
+            if (timerText) timerText.text = "NEXT";
+        }
+    }
+
+    private void HandleCarTimeout()
+    {
+        // 1. Can azalt
+        ReduceLife();
+
+        // 2. Arabayı yok et
+        spawner.DestroyCurrentPiece();
+
+        // 3. Sıradakini çağır (Eğer oyun bitmediyse)
+        if (currentLives > 0 && isRunning)
+        {
+            spawner.SpawnNextPiece();
         }
     }
 
@@ -217,8 +253,9 @@ public class LevelManager : MonoBehaviour
         targetMatches = Mathf.Max(1, cfg.targetMatches);
 
         int limit = Mathf.Max(1, fixedLevelSeconds);
-        useTimer = true;
+        useTimer = false; // Global timer disabled
         timeLeft = limit;
+        currentCarTimer = carTimeLimit; // Initialize 3s timer
 
         isRunning = true;
         if (stateText) stateText.text = "";
