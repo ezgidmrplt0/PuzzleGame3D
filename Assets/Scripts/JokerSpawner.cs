@@ -2,34 +2,39 @@ using UnityEngine;
 
 public class JokerSpawner : MonoBehaviour
 {
-    [SerializeField] private GameObject jokerPrefab;
-    [SerializeField] private Transform jokerParent;
-    [SerializeField] private Transform[] spawnPoints;
+    public static JokerSpawner Instance { get; private set; }
 
-    public void ClearJokers()
+    [Header("Joker Config")]
+    [SerializeField] private GameObject jokerPrefab;
+    [Range(0, 100)]
+    [SerializeField] private float jokerChance = 15f; 
+
+    private void Awake()
     {
-        if (!jokerParent) return;
-        for (int i = jokerParent.childCount - 1; i >= 0; i--)
-            Destroy(jokerParent.GetChild(i).gameObject);
+        if (Instance == null) Instance = this;
+        else Destroy(gameObject);
     }
 
-    public void SpawnJokers(int count)
+    public bool TryGetJoker(out GameObject prefab)
     {
-        if (count <= 0) return;
-        if (!jokerPrefab) return;
-        if (spawnPoints == null || spawnPoints.Length == 0) return;
+        prefab = null;
+        if (jokerPrefab == null) return false;
 
-        ClearJokers();
-
-        for (int i = 0; i < count; i++)
+        bool spawn = (Random.value * 100f < jokerChance);
+        if (spawn)
         {
-            Transform p = spawnPoints[i % spawnPoints.Length];
-            var go = Instantiate(jokerPrefab, p.position, p.rotation, jokerParent ? jokerParent : null);
+            prefab = jokerPrefab;
+            return true;
+        }
+        return false;
+    }
 
-            var fp = go.GetComponent<FallingPiece>();
-            if (!fp) fp = go.AddComponent<FallingPiece>();
-
-            fp.SetJoker(true);
+    public void OnJokerTapped(FallingPiece joker)
+    {
+        // Joker tıklandı: Her yeri çöz
+        if (SlotManager.Instance)
+        {
+            SlotManager.Instance.UnfreezeAllSlots();
         }
     }
 }

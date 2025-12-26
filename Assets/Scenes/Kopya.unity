@@ -1892,8 +1892,6 @@ MonoBehaviour:
   availablePieces:
   - {fileID: 7769690492283750692, guid: f40e52a0c26735a46b681671fb2baa40, type: 3}
   - {fileID: 8663673574762740106, guid: 3f83a5a9639ce0249ac0d7df9b8c40b9, type: 3}
-  jokerPrefab: {fileID: 0}
-  jokerChance: 15
   levels:
   - targetMatches: 3
     timeLimitSeconds: 60
@@ -1931,9 +1929,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   jokerPrefab: {fileID: 902004664933988168, guid: ce0ad7099b25d184394aa46259719bef, type: 3}
-  jokerParent: {fileID: 0}
-  spawnPoints:
-  - {fileID: 687155734}
+  jokerChance: 15
 --- !u!1 &700963024
 GameObject:
   m_ObjectHideFlags: 0

@@ -29,7 +29,7 @@ public class SlotManager : MonoBehaviour
     [SerializeField] private float startDistance = 2.2f;   // kullanılmıyor
 
     [Header("Animation Settings")]
-    [SerializeField] private float moveDuration = 0.25f;
+    [SerializeField] private float moveDuration = 5f;
     [SerializeField] private Ease moveEase = Ease.OutBack;
 
     [Header("Match Explode (Cosmetic)")]
@@ -589,6 +589,20 @@ public class SlotManager : MonoBehaviour
         MarkActivity();
     }
 
+
+    
+    public void UnfreezeAllSlots()
+    {
+        if (frozenSlots.Count == 0) return;
+
+        // Kopya alıp gezmek lazım, dictionary modified exception yemeyelim
+        List<Transform> allFrozen = new List<Transform>(frozenSlots.Keys);
+        foreach (var slot in allFrozen)
+        {
+            UnfreezeSlot(slot);
+        }
+    }
+
     private void UnfreezeSlot(Transform slot)
     {
         if (!frozenSlots.ContainsKey(slot)) return;
@@ -835,7 +849,7 @@ public class SlotManager : MonoBehaviour
         Debug.Log($"[SlotManager] SetupGrid called (manual slots). slotsPerZone ignored: {slotsPerZone}");
 
         foreach (var kv in grid) kv.Value.Clear();
-        frozenSlots.Clear();
+        UnfreezeAllSlots();
 
         CacheManualSlots();
 
@@ -867,7 +881,9 @@ public class SlotManager : MonoBehaviour
         for (int i = 0; i < allPieces.Length; i++)
             if (allPieces[i]) Destroy(allPieces[i].gameObject);
 
-        frozenSlots.Clear();
+
+
+        UnfreezeAllSlots();
         MarkActivity();
     }
 
@@ -897,6 +913,16 @@ public class SlotManager : MonoBehaviour
             if (sp) sp.NotifyCenterCleared(hitPiece);
 
             centerQueue.Dequeue();
+
+            // ✅ JOKER TAP (Refactored)
+            if (hitPiece.isJoker)
+            {
+                if (JokerSpawner.Instance != null)
+                    JokerSpawner.Instance.OnJokerTapped(hitPiece);
+                else
+                    SlotManager.Instance.UnfreezeAllSlots(); // Fallback
+            }
+
             Destroy(hitPiece.gameObject);
 
             if (sp) sp.SpawnNextPiece();

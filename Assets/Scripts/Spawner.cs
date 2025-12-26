@@ -13,10 +13,7 @@ public class Spawner : MonoBehaviour
     [Header("Piece Pool (Cars)")]
     [SerializeField] private List<GameObject> availablePieces;
 
-    [Header("Joker")]
-    [SerializeField] private GameObject jokerPrefab;
-    [Range(0, 100)]
-    [SerializeField] private float jokerChance = 15f; // genel şans (ister level config'e de taşırız)
+    // [Header("Joker")] -> Moved to JokerSpawner
 
     [Header("Level Configs")]
     [SerializeField] private List<LevelConfig> levels = new List<LevelConfig>();
@@ -105,7 +102,6 @@ public class Spawner : MonoBehaviour
 
         if (availablePieces != null && availablePieces.Count > 0)
         {
-            // hepsini kullan (istersen typeCount geri ekleriz)
             for (int i = 0; i < availablePieces.Count; i++)
             {
                 if (availablePieces[i] != null)
@@ -176,13 +172,14 @@ public class Spawner : MonoBehaviour
         var cfg = GetLevelConfig(currentLevel);
         if (cfg == null) yield break;
 
-        // ✅ Joker spawn?
-        bool spawnJoker = (jokerPrefab != null) && (UnityEngine.Random.value * 100f < jokerChance);
+        // ✅ Joker spawn (Refactored)
+        GameObject prefab = null;
+        bool isJoker = false;
 
-        GameObject prefab;
-        if (spawnJoker)
+        if (JokerSpawner.Instance != null && JokerSpawner.Instance.TryGetJoker(out GameObject jokerPrefab))
         {
             prefab = jokerPrefab;
+            isJoker = true;
         }
         else
         {
@@ -205,9 +202,7 @@ public class Spawner : MonoBehaviour
         if (!fp) fp = go.AddComponent<FallingPiece>();
 
         fp.SetPieceKey(prefab.name);
-
-        // ✅ Joker flag
-        fp.SetJoker(spawnJoker);
+        fp.SetJoker(isJoker);
 
         currentCenterPiece = fp;
         OnPieceSpawned?.Invoke(fp);
