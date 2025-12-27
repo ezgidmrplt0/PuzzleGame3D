@@ -253,20 +253,32 @@ public class LevelManager : MonoBehaviour
     private void ShowNotification(GameObject obj)
     {
         if (!obj) return;
-        
+
+        // Başlangıçta objeyi aktif et
         obj.SetActive(true);
+
+        // Başlangıçta boyut sıfır yaparak büyütme efekti ver
         obj.transform.localScale = Vector3.zero;
-        
-        // Pop in
+
+        // Pop in animasyonu
         obj.transform.DOScale(1f, 0.5f).SetEase(Ease.OutBack).OnComplete(() =>
         {
-            // Wait and Fade out
+            // Büyütme animasyonu tamamlandığında boyutun sabit kalmasını sağla
+            obj.transform.localScale = Vector3.one;
+
+            // Animasyondan sonra bir süre bekle ve fade out işlemi başlat
             DOVirtual.DelayedCall(1.5f, () =>
             {
-               obj.transform.DOScale(0f, 0.3f).SetEase(Ease.InBack).OnComplete(() => obj.SetActive(false));
+                obj.transform.DOScale(0f, 0.3f).SetEase(Ease.InBack).OnComplete(() =>
+                {
+                    // Objeyi devre dışı bırak (gizle)
+                    obj.SetActive(false);
+                });
             });
         });
     }
+
+
 
     public void StartLevel(int level)
     {

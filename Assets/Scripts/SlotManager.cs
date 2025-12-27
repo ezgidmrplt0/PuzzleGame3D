@@ -945,7 +945,7 @@ public class SlotManager : MonoBehaviour
     }
 
     // ================= Events =================
-
+   
     private void OnPieceSpawned(FallingPiece piece)
     {
         centerQueue.Enqueue(piece);
