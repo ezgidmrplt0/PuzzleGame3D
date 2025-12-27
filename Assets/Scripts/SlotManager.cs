@@ -699,6 +699,13 @@ public class SlotManager : MonoBehaviour
         if (total == 0) yield break;
 
         isShuffling = true;
+        
+        // Show Warning
+        if (LevelManager.Instance) LevelManager.Instance.ShowShuffleWarning();
+
+        // Wait 1 second before shuffling
+        yield return new WaitForSeconds(1.0f);
+
         bool prevInput = inputEnabled;
         inputEnabled = false;
 

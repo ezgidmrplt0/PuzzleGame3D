@@ -236,6 +236,38 @@ public class LevelManager : MonoBehaviour
             Lose("ALL LIVES LOST!");
     }
 
+    [Header("UI - Notifications")]
+    [SerializeField] private GameObject shuffleNotificationObj;
+    [SerializeField] private GameObject inverseNotificationObj;
+
+    public void ShowShuffleWarning()
+    {
+        ShowNotification(shuffleNotificationObj);
+    }
+
+    public void ShowInverseInputWarning()
+    {
+        ShowNotification(inverseNotificationObj);
+    }
+
+    private void ShowNotification(GameObject obj)
+    {
+        if (!obj) return;
+        
+        obj.SetActive(true);
+        obj.transform.localScale = Vector3.zero;
+        
+        // Pop in
+        obj.transform.DOScale(1f, 0.5f).SetEase(Ease.OutBack).OnComplete(() =>
+        {
+            // Wait and Fade out
+            DOVirtual.DelayedCall(1.5f, () =>
+            {
+               obj.transform.DOScale(0f, 0.3f).SetEase(Ease.InBack).OnComplete(() => obj.SetActive(false));
+            });
+        });
+    }
+
     public void StartLevel(int level)
     {
         Time.timeScale = 1f;
@@ -244,6 +276,8 @@ public class LevelManager : MonoBehaviour
 
         if (winPanel) winPanel.SetActive(false);
         if (losePanel) losePanel.SetActive(false);
+        if (shuffleNotificationObj) shuffleNotificationObj.SetActive(false);
+        if (inverseNotificationObj) inverseNotificationObj.SetActive(false);
 
         currentLevel = Mathf.Max(1, level);
         currentLives = maxLives;
@@ -264,6 +298,12 @@ public class LevelManager : MonoBehaviour
 
         if (slotManager)
             slotManager.SetSwipeInversion(cfg.invertHorizontalSwipe, cfg.invertVerticalSwipe);
+        
+        // Check Inverse Input Warning
+        if (cfg.invertHorizontalSwipe || cfg.invertVerticalSwipe)
+        {
+            ShowInverseInputWarning();
+        }
 
         warningTriggered = false;
         if (warningShakeTween != null && warningShakeTween.IsActive()) warningShakeTween.Kill();
