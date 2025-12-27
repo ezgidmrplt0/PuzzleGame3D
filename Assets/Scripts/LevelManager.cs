@@ -309,6 +309,10 @@ public class LevelManager : MonoBehaviour
         if (warningShakeTween != null && warningShakeTween.IsActive()) warningShakeTween.Kill();
         warningShakeTween = null;
 
+        warningShakeTween = null;
+
+        if (slotManager) slotManager.ResetBoard(); // ✅ Clean first
+
         if (slotManager)
         {
             slotManager.SetupGrid(cfg.slotsPerZone);
@@ -317,7 +321,7 @@ public class LevelManager : MonoBehaviour
             UpdateCamera(cfg.slotsPerZone);
         }
 
-        slotManager.ResetBoard();
+        // slotManager.ResetBoard(); // ✅ Moved up
         spawner.StartLevel(currentLevel);
 
         RefreshUI_All();

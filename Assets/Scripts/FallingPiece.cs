@@ -102,8 +102,11 @@ public class FallingPiece : MonoBehaviour
         if (activeTween != null && activeTween.IsActive()) activeTween.Kill();
         if (rb == null) return;
 
-        rb.velocity = Vector3.zero;
-        rb.angularVelocity = Vector3.zero;
+        if (!rb.isKinematic)
+        {
+            rb.velocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+        }
         rb.useGravity = false;
         rb.isKinematic = true;
 

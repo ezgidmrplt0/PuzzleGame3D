@@ -39,7 +39,7 @@ public class SlotManager : MonoBehaviour
 
     [Header("Content Shuffle (Difficulty)")]
     [SerializeField] private bool enableContentShuffle = true;
-    [SerializeField] private float shuffleInterval = 12f;
+    [SerializeField] private float shuffleInterval = 6f;
     [SerializeField] private float shuffleMoveDuration = 0.45f;
     [SerializeField] private Ease shuffleEase = Ease.InOutSine;
 
@@ -77,6 +77,7 @@ public class SlotManager : MonoBehaviour
     private bool randomFreezeEnabled = true;
 
     private Coroutine shuffleRoutine;
+    private Sequence shuffleSequence; // ✅ New: Track the sequence
     private Coroutine freezeRoutine;
 
     private Dictionary<Direction, List<FallingPiece>> grid;
@@ -219,6 +220,10 @@ public class SlotManager : MonoBehaviour
 
     private void CacheZone(Direction dir, Transform origin)
     {
+        // ✅ Safety check
+        if (!zoneSlots.ContainsKey(dir))
+            zoneSlots[dir] = new List<Transform>();
+
         zoneSlots[dir].Clear();
         if (!origin) return;
 
@@ -248,6 +253,9 @@ public class SlotManager : MonoBehaviour
 
     private void OnEnable()
     {
+        // ✅ Robustness: Ensure grid is initialized
+        if (grid == null) InitializeGrid();
+
         Spawner.OnPieceSpawned += OnPieceSpawned;
         SwipeInput.OnSwipe += OnSwipe;
         SwipeInput.OnTap += OnTap;
@@ -632,6 +640,7 @@ public class SlotManager : MonoBehaviour
 
     private void StartShuffleRoutineIfNeeded()
     {
+        Debug.Log($"[ShuffleDebug] StartShuffleRoutineIfNeeded. Enabled: {enableContentShuffle}");
         if (!enableContentShuffle) return;
 
         if (shuffleRoutine != null)
@@ -642,6 +651,12 @@ public class SlotManager : MonoBehaviour
 
     private void StopShuffleRoutine()
     {
+        Debug.Log("[ShuffleDebug] StopShuffleRoutine called");
+        // ✅ Kill Sequence
+        if (shuffleSequence != null && shuffleSequence.IsActive())
+            shuffleSequence.Kill();
+        shuffleSequence = null;
+
         if (shuffleRoutine != null)
         {
             StopCoroutine(shuffleRoutine);
@@ -652,10 +667,12 @@ public class SlotManager : MonoBehaviour
 
     private System.Collections.IEnumerator ContentShuffleLoop()
     {
+        Debug.Log($"[ShuffleDebug] ContentShuffleLoop started. Interval: {shuffleInterval}");
         yield return new WaitForSeconds(shuffleInterval);
 
         while (enableContentShuffle)
         {
+            Debug.Log("[ShuffleDebug] Triggering ShuffleContentsOnce");
             yield return ShuffleContentsOnce();
             yield return new WaitForSeconds(shuffleInterval);
         }
@@ -766,7 +783,8 @@ public class SlotManager : MonoBehaviour
 
         if (!foundFeasible)
         {
-            inputEnabled = prevInput;
+            Debug.Log("[ShuffleDebug] Shuffle not feasible. Aborting.");
+            inputEnabled = true; // ✅ Force Enable
             isShuffling = false;
             yield break;
         }
@@ -793,7 +811,10 @@ public class SlotManager : MonoBehaviour
                 if (list[i]) list[i].transform.SetParent(null, true);
         }
 
-        Sequence master = DOTween.Sequence();
+        shuffleSequence = DOTween.Sequence();
+        shuffleSequence.OnKill(() => shuffleSequence = null); // Cleanup ref
+
+        Sequence master = shuffleSequence;
 
         foreach (var d in dirs)
         {
@@ -849,8 +870,9 @@ public class SlotManager : MonoBehaviour
         yield return master.WaitForCompletion();
 
         grid = newGrid;
-
-        inputEnabled = prevInput;
+        
+        Debug.Log("[ShuffleDebug] Shuffle Animation Complete. Restoring Input.");
+        inputEnabled = true; // ✅ Force Enable
         isShuffling = false;
 
         MarkActivity();
@@ -867,6 +889,7 @@ public class SlotManager : MonoBehaviour
 
         CacheManualSlots();
 
+        StopShuffleRoutine(); // ✅ Fix: Stop previous before starting new
         StartShuffleRoutineIfNeeded();
         MarkActivity();
     }
@@ -898,6 +921,26 @@ public class SlotManager : MonoBehaviour
 
 
         UnfreezeAllSlots();
+        
+        // ✅ Force Stop Shuffle & Pulse
+        StopShuffleRoutine();
+        StopPulseRoutine();
+
+        // ✅ Kill Idle Tweens
+        foreach (var kv in pieceIdleTweens)
+        {
+            if (kv.Value != null && kv.Value.IsActive())
+                kv.Value.Kill();
+        }
+        pieceIdleTweens.Clear();
+        pieceIdleBaseScales.Clear();
+        
+        // ✅ Reset Global Pulse
+        StopGlobalPulseTween();
+
+        inputEnabled = true; // Safety reset
+        isShuffling = false;
+
         MarkActivity();
     }
 
