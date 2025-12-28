@@ -18,7 +18,7 @@ Shader "Custom/NeonBorderUI"
         _Color2 ("Color 2", Color) = (1, 0, 1, 1) // Pink default, user can change
         _CoreWidth ("Core White Width", Range(0, 1)) = 0.2 // Ratio relative to border
         _BorderWidth ("Border Width", Range(0, 0.5)) = 0.05
-        _CornerRadius ("Corner Radius", Range(0, 0.5)) = 0.1
+        _CornerRadius ("Corner Radius", Range(0, 2.0)) = 0.1
         _GlowIntensity ("Glow Intensity", Range(1, 5)) = 2.0
         _Speed ("Rotation Speed", Range(-5, 5)) = 1.0
         _Hardness ("Hardness", Range(0.1, 100)) = 50.0
@@ -92,6 +92,7 @@ Shader "Custom/NeonBorderUI"
             float _GlowIntensity;
             float _Speed;
             float _Hardness;
+            float _AspectRatio; // Passed via script (Width / Height)
 
             v2f vert(appdata_t v)
             {
@@ -117,17 +118,29 @@ Shader "Custom/NeonBorderUI"
             fixed4 frag(v2f IN) : SV_Target
             {
                 float2 uv = IN.texcoord - 0.5;
-                float2 halfSize = float2(0.5, 0.5);
+                
+                // --- ASPECT RATIO CORRECTION ---
+                // We default _AspectRatio to 1.0 if not set (or 0). 
+                // But generally it should be Width/Height.
+                // To keep corners uniform, we must operate in a space where units are square.
+                float aspect = (_AspectRatio <= 0) ? 1.0 : _AspectRatio;
+                
+                // Scale X by aspect ratio
+                uv.x *= aspect;
+                
+                float2 halfSize = float2(0.5 * aspect, 0.5);
 
-                // 1. Base Box Shape (The path of the line)
-                // We offset halfSize by half-border-width so the border stays *inside* the UI bounds if needed,
-                // or centered on the edge. Let's Center it on pure 0.5 bounds inset slightly.
+                // 1. Base Box Shape
+                // Offset border width relative to the shortest side or uniformly? 
+                // BorderWidth is typically uniform.
+                // Important: _BorderWidth in shader property is likely "percentage of UV". 
+                // If we scale space, we might need to adjust expected border width feel.
+                // Let's keep it simple: BorderWidth is now in "Height Units".
+                
                 float2 boxSize = halfSize - _BorderWidth; 
                 float baseDist = sdRoundedBox(uv, boxSize, _CornerRadius.xxxx);
                 
-                // 2. Annular SDF (Make it a hollow outline)
-                // abs(dist) makes 0 the center of the line.
-                // We want the line to be _BorderWidth thick.
+                // 2. Annular SDF
                 float distFromOneLine = abs(baseDist);
                 float alphaDist = distFromOneLine - (_BorderWidth * 0.5);
                 
@@ -135,7 +148,15 @@ Shader "Custom/NeonBorderUI"
                 float alpha = 1.0 - saturate(alphaDist * _Hardness);
 
                 // --- COLOR ANIMATION ---
-                float angle = atan2(uv.y, uv.x);
+                // For angle, we use the original UVs or corrected?
+                // Corrected UVs give a more uniform rotation speed relative to visual circle, 
+                // but for a rectangle, maybe we want "clock" angle?
+                // Let's use corrected UVs so the gradient travels at constant linear speed along the perimeter roughly... 
+                // Actually atan2 on rectangle is tricky. Let's strictly use Uncorrected UV for angle 
+                // so top-right is always 45 degrees visually if the user sees it as a box.
+                // Actually, if we use corrected UVs, the angle is true geometric angle.
+                float angle = atan2(uv.y, uv.x); 
+
                 float angle01 = angle / 6.283185307 + 0.5;
                 float t = angle01 + _Time.y * _Speed * 0.5;
                 
