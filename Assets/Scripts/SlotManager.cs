@@ -946,10 +946,39 @@ public class SlotManager : MonoBehaviour
 
     // ================= Events =================
    
-    private void OnPieceSpawned(FallingPiece piece)
+    private void OnPieceSpawned(FallingPiece p)
     {
-        centerQueue.Enqueue(piece);
+        centerQueue.Enqueue(p);
+
+        // ✅ Check Loss
+        CheckLoseCondition(p);
         MarkActivity();
+    }
+
+    private void CheckLoseCondition(FallingPiece p)
+    {
+        if (!p || p.isJoker) return; // Joker can be tapped away or used on ice
+
+        // Check if ANY move is possible
+        bool anySlotOpen = false;
+        foreach (var dir in dirs)
+        {
+            // If direction is invalid (e.g. manual slots empty), skip
+            if (!zoneSlots.ContainsKey(dir)) continue;
+
+            // Using existing logic: TryGetFirstEmptySlot checks frozen too
+            if (TryGetFirstEmptySlot(dir, out _))
+            {
+                anySlotOpen = true;
+                break;
+            }
+        }
+
+        if (!anySlotOpen)
+        {
+            Debug.Log("[GameLogic] Board Full! No moves possible. Game Over.");
+            if (LevelManager.Instance) LevelManager.Instance.Lose("BOARD FULL!");
+        }
     }
 
     private void OnTap(Vector2 screenPos)
@@ -1039,16 +1068,45 @@ public class SlotManager : MonoBehaviour
 
     private void OnSwipe(Direction dir)
     {
+        Debug.Log($"[SlotManager] OnSwipe({dir}). Input:{inputEnabled}, Shuffling:{isShuffling}, Queue:{centerQueue.Count}");
         MarkActivity();
-        if (!inputEnabled || isShuffling) return;
-        if (centerQueue.Count == 0) return;
+        if (!inputEnabled || isShuffling) 
+        {
+            Debug.Log($"[SlotManager] Swipe ignored. Input:{inputEnabled}, Shuffling:{isShuffling}");
+            return;
+        }
+        if (centerQueue.Count == 0) 
+        {
+            Debug.Log("[SlotManager] Swipe ignored. CenterQueue empty.");
+            return;
+        }
+
+        // ✅ CLEANUP: Remove destroyed pieces (from timeouts)
+        while (centerQueue.Count > 0 && centerQueue.Peek() == null)
+        {
+            centerQueue.Dequeue();
+        }
+
+        if (centerQueue.Count == 0)
+        {
+             Debug.Log("[SlotManager] Swipe ignored. Queue empty after cleanup.");
+             return;
+        }
 
         dir = ApplyInversion(dir);
 
-        if (!zoneSlots.ContainsKey(dir) || zoneSlots[dir].Count == 0) return;
+        if (!zoneSlots.ContainsKey(dir) || zoneSlots[dir].Count == 0) 
+        {
+            Debug.Log($"[SlotManager] Swipe ignored. Zone undefined or empty for dir {dir}");
+            return;
+        }
 
         FallingPiece peekPiece = centerQueue.Peek();
-        if (!peekPiece) return;
+        if (!peekPiece) 
+        {
+            Debug.Log("[SlotManager] Swipe ignored. PeekPiece is null.");
+            return;
+        }
 
         // ✅ JOKER: bu yönde frozen varsa gidip aç (1 joker = 1 frozen)
         if (peekPiece.isJoker)

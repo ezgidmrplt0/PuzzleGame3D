@@ -11,9 +11,12 @@ public class LevelManager : MonoBehaviour
 
     [Header("UI - Panels")]
     [SerializeField] private GameObject winPanel;
+    [SerializeField] private Image winImage; // ✅ New Image
     [SerializeField] private TMP_Text winText;
     [SerializeField] private GameObject losePanel;
+    [SerializeField] private Image loseImage; // ✅ New Image
     [SerializeField] private TMP_Text loseText;
+    [SerializeField] private GameObject tapToStartPanel; // ✅ New Panel Ref
 
     [Header("UI - Text")]
     [SerializeField] private TMP_Text levelText;
@@ -63,6 +66,7 @@ public class LevelManager : MonoBehaviour
 
     private bool isRunning;
     private bool isPaused;
+    private bool hasStartedGame = false; // ✅ New flag
 
     public static LevelManager Instance { get; private set; }
 
@@ -100,7 +104,17 @@ public class LevelManager : MonoBehaviour
         if (!spawner) spawner = FindObjectOfType<Spawner>();
         if (!slotManager) slotManager = FindObjectOfType<SlotManager>();
 
-        StartLevel(startLevel);
+        // ✅ Check if we need to wait for Tap
+        if (tapToStartPanel)
+        {
+            tapToStartPanel.SetActive(true);
+            hasStartedGame = false;
+        }
+        else
+        {
+            hasStartedGame = true;
+            StartLevel(startLevel);
+        }
     }
 
     [Header("Car Timer")]
@@ -109,6 +123,18 @@ public class LevelManager : MonoBehaviour
 
     private void Update()
     {
+        // ✅ Tap to start detected?
+        if (!hasStartedGame)
+        {
+            if (Input.GetMouseButtonDown(0))
+            {
+                hasStartedGame = true;
+                if (tapToStartPanel) tapToStartPanel.SetActive(false);
+                StartLevel(startLevel);
+            }
+            return;
+        }
+
         if (!isRunning || isPaused) return;
 
         // Global Level Timer (Optional - Disabled for now to focus on Car Timer)
@@ -261,10 +287,11 @@ public class LevelManager : MonoBehaviour
         obj.transform.localScale = Vector3.zero;
 
         // Pop in animasyonu
-        obj.transform.DOScale(1f, 0.5f).SetEase(Ease.OutBack).OnComplete(() =>
+        Vector3 targetScale = new Vector3(3f, 3f, 1f);
+        obj.transform.DOScale(targetScale, 0.5f).SetEase(Ease.OutBack).OnComplete(() =>
         {
             // Büyütme animasyonu tamamlandığında boyutun sabit kalmasını sağla
-            obj.transform.localScale = Vector3.one;
+            obj.transform.localScale = targetScale;
 
             // Animasyondan sonra bir süre bekle ve fade out işlemi başlat
             DOVirtual.DelayedCall(1.5f, () =>
@@ -321,6 +348,9 @@ public class LevelManager : MonoBehaviour
         if (warningShakeTween != null && warningShakeTween.IsActive()) warningShakeTween.Kill();
         warningShakeTween = null;
 
+        if (winPanel) winPanel.SetActive(false); // ✅ Ensure hidden
+        if (losePanel) losePanel.SetActive(false); // ✅ Ensure hidden
+
         warningShakeTween = null;
 
         if (slotManager) slotManager.ResetBoard(); // ✅ Clean first
@@ -346,27 +376,43 @@ public class LevelManager : MonoBehaviour
 
         if (stateText) stateText.text = "";
 
-        if (winPanel)
-        {
-            winPanel.SetActive(true);
-            if (winText) winText.text = "LEVEL\nCOMPLETED!";
-        }
+        AnimateResultPanel(winPanel, winImage); // ✅ Use Anim
+        if (winText) winText.text = "LEVEL\nCOMPLETED!";
+
         Invoke(nameof(NextLevel), 1.5f);
     }
 
-    private void Lose(string reason)
+    public void Lose(string reason = "GAME OVER")
     {
         isRunning = false;
         slotManager.SetInputEnabled(false);
 
         if (stateText) stateText.text = "";
 
-        if (losePanel)
-        {
-            losePanel.SetActive(true);
-            if (loseText) loseText.text = $"FAILED\n{reason}";
-        }
+        AnimateResultPanel(losePanel, loseImage); // ✅ Use Anim
+        if (loseText) loseText.text = $"FAILED\n{reason}";
+
         Invoke(nameof(RetryLevel), 2.0f);
+    }
+
+    private void AnimateResultPanel(GameObject panel, Image img)
+    {
+        if (!panel) return;
+
+        panel.SetActive(true);
+        panel.transform.localScale = Vector3.zero;
+        panel.transform.DOScale(1f, 0.5f).SetEase(Ease.OutBack);
+
+        if (img)
+        {
+            img.transform.localScale = Vector3.zero;
+            Sequence seq = DOTween.Sequence();
+            seq.AppendInterval(0.2f);
+            seq.Append(img.transform.DOScale(1f, 0.6f).SetEase(Ease.OutElastic));
+            seq.AppendCallback(() => {
+                if(img) img.transform.DOScale(1.1f, 0.8f).SetEase(Ease.InOutSine).SetLoops(-1, LoopType.Yoyo);
+            });
+        }
     }
 
     private void NextLevel() => StartLevel(currentLevel + 1);
