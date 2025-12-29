@@ -25,6 +25,15 @@ public class Spawner : MonoBehaviour
 
     private FallingPiece currentCenterPiece;
     private LevelConfig currentLevelConfig;
+    private System.Random levelRng;
+
+    public void InitSeed(int seed)
+    {
+        levelRng = new System.Random(seed);
+    }
+
+    private float GetRandomValue() => (float)levelRng.NextDouble();
+    private int GetRandomRange(int min, int max) => levelRng.Next(min, max);
 
     public bool HasActivePiece() => currentCenterPiece != null;
 
@@ -124,9 +133,9 @@ public class Spawner : MonoBehaviour
 
         // 6. SWIPE INVERSION (Fun/Trick mechanics)
         // Randomly invert after level 7, but not on relief levels
-        if (level > 7 && !isReliefLevel && UnityEngine.Random.value < 0.2f)
+        if (level > 7 && !isReliefLevel && GetRandomValue() < 0.2f)
         {
-            if (UnityEngine.Random.value < 0.5f) cfg.invertHorizontalSwipe = true;
+            if (GetRandomValue() < 0.5f) cfg.invertHorizontalSwipe = true;
             else cfg.invertVerticalSwipe = true;
         }
 
@@ -153,7 +162,7 @@ public class Spawner : MonoBehaviour
             // Fisher-Yates shuffle
             for (int i = shuffled.Count - 1; i > 0; i--)
             {
-                int rnd = UnityEngine.Random.Range(0, i + 1);
+                int rnd = GetRandomRange(0, i + 1);
                 var temp = shuffled[i];
                 shuffled[i] = shuffled[rnd];
                 shuffled[rnd] = temp;
@@ -192,10 +201,11 @@ public class Spawner : MonoBehaviour
                 if (entries[i] != null && entries[i].prefab != null) valid.Add(entries[i]);
 
             if (valid.Count == 0) return null;
-            return valid[UnityEngine.Random.Range(0, valid.Count)];
+            if (valid.Count == 0) return null;
+            return valid[GetRandomRange(0, valid.Count)];
         }
 
-        int roll = UnityEngine.Random.Range(0, total);
+        int roll = GetRandomRange(0, total);
         int acc = 0;
         for (int i = 0; i < entries.Count; i++)
         {

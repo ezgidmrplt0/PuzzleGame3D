@@ -329,6 +329,9 @@ public class LevelManager : MonoBehaviour
         currentLives = maxLives;
         matchesDone = 0;
 
+        matchesDone = 0;
+
+        spawner.InitSeed(currentLevel); // ✅ Deterministic RNG init
         var cfg = spawner.GetLevelConfig(currentLevel);
         targetMatches = Mathf.Max(1, cfg.targetMatches);
 
