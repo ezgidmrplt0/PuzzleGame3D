@@ -4,18 +4,9 @@ using DG.Tweening;
 public class FallingPiece : MonoBehaviour
 {
     public string pieceKey { get; private set; }
-    public bool isJoker { get; private set; }  // ✅ NEW
 
-    // eski alanlar
-    public bool isFrozen { get; private set; }
-    public int freezeHealth { get; private set; } = 3;
-
-    [Header("Normal Visuals")]
+    [Header("Visuals")]
     [SerializeField] private Texture faceTexture;
-
-    [Header("Frozen Visuals")]
-    [SerializeField] private Texture iceTexture;
-    [SerializeField] private Color iceColor = Color.cyan;
 
     private MeshRenderer meshRenderer;
     private Color normalColor = Color.white;
@@ -47,13 +38,6 @@ public class FallingPiece : MonoBehaviour
     public void SetPieceKey(string key) => pieceKey = key;
     public string GetPieceKey() => pieceKey;
 
-    public void SetJoker(bool joker)
-    {
-        isJoker = joker;
-        // jokerin frozen/fake gibi görünmesini istemiyorsan burada özel material verirsin
-        RefreshVisualState();
-    }
-
     public void SetNormalColor(Color c)
     {
         normalColor = c;
@@ -62,42 +46,17 @@ public class FallingPiece : MonoBehaviour
 
     public Color GetNormalColor() => normalColor;
 
-    public void SetFrozen(bool frozen)
-    {
-        isFrozen = frozen;
-        if (frozen) freezeHealth = 3;
-        RefreshVisualState();
-    }
-
     private void RefreshVisualState()
     {
         if (!meshRenderer) return;
 
-        if (isFrozen)
-        {
-            meshRenderer.material.color = iceColor;
-            meshRenderer.material.mainTexture = (iceTexture != null) ? iceTexture : normalTexture;
-        }
-        else
-        {
-            meshRenderer.material.color = normalColor;
-            meshRenderer.material.mainTexture = normalTexture;
-        }
+        meshRenderer.material.color = normalColor;
+        meshRenderer.material.mainTexture = normalTexture;
     }
 
-    public void TakeDamage()
-    {
-        freezeHealth--;
+    // TakeDamage removed
 
-        Vector3 baseScale = transform.localScale;
-        transform.DOShakeScale(0.15f, 0.2f).OnComplete(() =>
-        {
-            if (this != null && transform != null)
-                transform.localScale = baseScale;
-        });
-    }
-
-    public void TweenToSlot(Transform targetSlot, float duration, Ease ease, System.Action onComplete = null)
+    public void TweenToSlot(Transform targetSlot, float duration, Ease ease, System.Action onComplete)
     {
         if (activeTween != null && activeTween.IsActive()) activeTween.Kill();
         if (rb == null) return;

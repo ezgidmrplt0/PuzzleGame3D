@@ -42,13 +42,13 @@ public class Spawner : MonoBehaviour
     {
         [Header("Zorluk Ayarları")]
         public int targetMatches = 3;
-        public int timeLimitSeconds = 60;
+        public int timeLimitSeconds = 60; // Global Timer (Optional)
+        public float carSpawnDuration = 3.0f; // New: Per-car timer
 
         [Header("Grid Yapısı")]
         [Range(1, 4)] public int slotsPerZone = 1;
 
-        [Header("Level Start Frozen (Design)")]
-        [Min(0)] public int startFrozenCount = 0;
+
 
         [Header("Ters Input (Opsiyonel)")]
         public bool invertHorizontalSwipe = false;
@@ -67,57 +67,105 @@ public class Spawner : MonoBehaviour
 
     public LevelConfig GetLevelConfig(int level)
     {
+        // Always generate procedural config to ensure difficulty logic applies
+        // If you want to use manual overrides from the list, uncomment the check below.
+        /*
         if (currentLevelConfig != null && currentLevel == level)
             return currentLevelConfig;
+        */
 
         return CreateLevelConfig(level);
     }
 
     private LevelConfig CreateLevelConfig(int level)
     {
-        LevelConfig cfg = null;
+        LevelConfig cfg = new LevelConfig();
 
-        if (levels != null && levels.Count > 0)
+        // ---------------------------------------------------------
+        // DIFFICULTY LOGIC / LEVEL MANTIĞI
+        // ---------------------------------------------------------
+
+        // 1. RELIEF LEVEL CHECK (Every 5th level is easy)
+        bool isReliefLevel = (level > 1 && level % 5 == 0);
+
+        // 2. TARGET MATCHES
+        // Base growth: Linear increase
+        int baseTarget = 3 + Mathf.FloorToInt(level * 0.8f);
+        if (isReliefLevel) baseTarget = Mathf.Max(3, Mathf.FloorToInt(baseTarget * 0.6f)); // %40 reduction
+        cfg.targetMatches = baseTarget;
+
+        // 3. OBJECT VARIETY (activeObjectCount)
+        // Level 1-2: 2 types
+        // Level 3-9: 3 types
+        // Level 10+: 4 types (Max 4 as requested)
+        int variety = 2;
+        if (level >= 3) variety = 3;
+        if (level >= 10) variety = 4;
+        
+        // Relief level reduces variety slightly for comfort
+        if (isReliefLevel && variety > 2) variety--;
+
+        // 4. SPAWN DURATION (Timer per car)
+        // Starts at 4.0s, drops to 2.0s minimum.
+        // Drops by 0.05s per level.
+        float baseTime = 4.0f;
+        float timeDrop = (level - 1) * 0.05f;
+        float duration = Mathf.Max(2.0f, baseTime - timeDrop);
+        
+        if (isReliefLevel) duration += 1.5f; // Extra time for relief
+
+        cfg.carSpawnDuration = duration;
+
+        // 5. GRID / SLOTS
+        // Increase slots occasionally? For now keep simple or random.
+        cfg.slotsPerZone = 1; // Standard 1 slot
+        // Maybe at very high levels introduce 2 slots?
+        // if (level > 15) cfg.slotsPerZone = 2; 
+
+        // 6. SWIPE INVERSION (Fun/Trick mechanics)
+        // Randomly invert after level 7, but not on relief levels
+        if (level > 7 && !isReliefLevel && UnityEngine.Random.value < 0.2f)
         {
-            int idx = level - 1;
-            if (idx < levels.Count)
-            {
-                var preset = levels[idx];
-                cfg = new LevelConfig
-                {
-                    targetMatches = preset.targetMatches,
-                    timeLimitSeconds = preset.timeLimitSeconds,
-                    slotsPerZone = preset.slotsPerZone,
-                    startFrozenCount = preset.startFrozenCount,
-                    invertHorizontalSwipe = preset.invertHorizontalSwipe,
-                    invertVerticalSwipe = preset.invertVerticalSwipe
-                };
-            }
+            if (UnityEngine.Random.value < 0.5f) cfg.invertHorizontalSwipe = true;
+            else cfg.invertVerticalSwipe = true;
         }
 
-        if (cfg == null)
-        {
-            cfg = new LevelConfig();
-            cfg.targetMatches = 3 + (level / 4);
-            cfg.timeLimitSeconds = 30;
-            cfg.slotsPerZone = 1;
-            cfg.startFrozenCount = 0;
-        }
+        cfg.timeLimitSeconds = 60; // Not mainly used
+        cfg.timeLimitSeconds = 60; // Not mainly used
 
-        PopulateSpawnsFromPool(cfg);
+        // ---------------------------------------------------------
+
+        // Populate spawns with limited variety
+        PopulateSpawnsFromPool(cfg, variety);
+        
         return cfg;
     }
 
-    private void PopulateSpawnsFromPool(LevelConfig cfg)
+    private void PopulateSpawnsFromPool(LevelConfig cfg, int varietyCount)
     {
         cfg.spawns = new List<SpawnEntry>();
 
         if (availablePieces != null && availablePieces.Count > 0)
         {
-            for (int i = 0; i < availablePieces.Count; i++)
+            // Create a shuffled temporary list
+            List<GameObject> shuffled = new List<GameObject>(availablePieces);
+            
+            // Fisher-Yates shuffle
+            for (int i = shuffled.Count - 1; i > 0; i--)
             {
-                if (availablePieces[i] != null)
-                    cfg.spawns.Add(new SpawnEntry { prefab = availablePieces[i], count = 1 });
+                int rnd = UnityEngine.Random.Range(0, i + 1);
+                var temp = shuffled[i];
+                shuffled[i] = shuffled[rnd];
+                shuffled[rnd] = temp;
+            }
+
+            // Pick first N items based on varietyCount
+            int countToPick = Mathf.Clamp(varietyCount, 1, shuffled.Count);
+
+            for (int i = 0; i < countToPick; i++)
+            {
+                if (shuffled[i] != null)
+                    cfg.spawns.Add(new SpawnEntry { prefab = shuffled[i], count = 1 });
             }
         }
         else
@@ -198,9 +246,7 @@ public class Spawner : MonoBehaviour
         if (cfg == null) return;
         
         GameObject prefab = null;
-        if (JokerSpawner.Instance != null && JokerSpawner.Instance.TryGetJoker(out GameObject jokerPrefab))
-            prefab = jokerPrefab;
-        else if (cfg.spawns != null && cfg.spawns.Count > 0)
+        if (cfg.spawns != null && cfg.spawns.Count > 0)
         {
             var entry = PickWeighted(cfg.spawns);
             if (entry != null) prefab = entry.prefab;
@@ -225,8 +271,6 @@ public class Spawner : MonoBehaviour
         if (!fp) fp = go.AddComponent<FallingPiece>();
         
         fp.SetPieceKey(prefab.name);
-        bool isJoker = (go.name.Contains("Joker") || (JokerSpawner.Instance && JokerSpawner.Instance.IsJokerPrefab(prefab)));
-        fp.SetJoker(isJoker);
 
         visualQueue.Add(fp);
     }

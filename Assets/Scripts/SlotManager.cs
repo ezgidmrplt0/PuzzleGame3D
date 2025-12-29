@@ -43,14 +43,7 @@ public class SlotManager : MonoBehaviour
     [SerializeField] private float shuffleMoveDuration = 0.45f;
     [SerializeField] private Ease shuffleEase = Ease.InOutSine;
 
-    [Header("Frozen Slots (Difficulty)")]
-    [SerializeField] private bool enableFrozenSlots = true;
-    [SerializeField] private float freezeInterval = 5f;
-    [SerializeField] private float freezeChance = 0.4f;
 
-    [Header("Ice Slot Look")]
-    [SerializeField] private Texture iceSlotTexture;
-    [SerializeField] private Color iceSlotColor = Color.cyan;
 
     [Header("Idle Animations (Cosmetic)")]
     [SerializeField] private bool enableIdleWiggle = true;
@@ -78,18 +71,12 @@ public class SlotManager : MonoBehaviour
 
     private Coroutine shuffleRoutine;
     private Sequence shuffleSequence; // ✅ New: Track the sequence
-    private Coroutine freezeRoutine;
+
 
     private Dictionary<Direction, List<FallingPiece>> grid;
     private Queue<FallingPiece> centerQueue = new Queue<FallingPiece>();
 
-    private class SlotVisualState
-    {
-        public Color color;
-        public Texture mainTexture;
-        public SlotVisualState(Color c, Texture t) { color = c; mainTexture = t; }
-    }
-    private Dictionary<Transform, SlotVisualState> frozenSlots = new Dictionary<Transform, SlotVisualState>();
+
 
     private readonly Direction[] dirs = new Direction[]
     {
@@ -172,41 +159,7 @@ public class SlotManager : MonoBehaviour
         invertVertical = invertVerticalSwipe;
     }
 
-    // ✅ Random freeze aç/kapat (Level design kontrolü)
-    public void SetRandomFreezeEnabled(bool enabled) => randomFreezeEnabled = enabled;
 
-    // ✅ Level başı kaç frozen olacak
-    public void ApplyStartFrozenCount(int count)
-    {
-        if (count <= 0) return;
-
-        CacheManualSlots();
-
-        // tüm slotları havuza koy (boş olanlardan seçelim)
-        List<Transform> candidates = new List<Transform>();
-        foreach (var d in dirs)
-        {
-            if (!zoneSlots.ContainsKey(d)) continue;
-            var slots = zoneSlots[d];
-            for (int i = 0; i < slots.Count; i++)
-            {
-                var s = slots[i];
-                if (!s) continue;
-                if (frozenSlots.ContainsKey(s)) continue;
-                if (s.GetComponentInChildren<FallingPiece>() != null) continue; // doluysa donma
-                candidates.Add(s);
-            }
-        }
-
-        // rastgele seç
-        for (int i = 0; i < count && candidates.Count > 0; i++)
-        {
-            int idx = UnityEngine.Random.Range(0, candidates.Count);
-            Transform pick = candidates[idx];
-            candidates.RemoveAt(idx);
-            FreezeSlot(pick);
-        }
-    }
 
     // ================= Manual Slot Cache =================
 
@@ -263,7 +216,7 @@ public class SlotManager : MonoBehaviour
         CacheManualSlots();
 
         StartShuffleRoutineIfNeeded();
-        StartFreezeRoutineIfNeeded();
+
 
         MarkActivity();
         StartIdleRoutine();
@@ -277,7 +230,7 @@ public class SlotManager : MonoBehaviour
         SwipeInput.OnTap -= OnTap;
 
         StopShuffleRoutine();
-        StopFreezeRoutine();
+        StopShuffleRoutine();
 
         StopIdleRoutine();
         StopIdleWiggle();
@@ -524,117 +477,14 @@ public class SlotManager : MonoBehaviour
 
     // ================= Freeze =================
 
-    private void StartFreezeRoutineIfNeeded()
-    {
-        /*
-        if (!enableFrozenSlots) return;
-        if (freezeRoutine != null) StopCoroutine(freezeRoutine);
-        freezeRoutine = StartCoroutine(FrozenSlotLoop());
-        */
-    }
 
-    private void StopFreezeRoutine()
-    {
-        /*
-        if (freezeRoutine != null)
-        {
-            StopCoroutine(freezeRoutine);
-            freezeRoutine = null;
-        }
-        */
-    }
 
     // Random Freezing Removed as per new design
-    /*
-    private System.Collections.IEnumerator FrozenSlotLoop()
-    {
-        while (enableFrozenSlots)
-        {
-            yield return new WaitForSeconds(freezeInterval);
 
-            if (!randomFreezeEnabled) continue;
-            if (UnityEngine.Random.value < freezeChance && !isShuffling && inputEnabled)
-                TryFreezeRandomSlot();
-        }
-    }
-    */
-
-    private void TryFreezeRandomSlot()
-    {
-        Direction d = dirs[UnityEngine.Random.Range(0, dirs.Length)];
-        if (!zoneSlots.ContainsKey(d) || zoneSlots[d].Count == 0) return;
-
-        int randIdx = UnityEngine.Random.Range(0, zoneSlots[d].Count);
-        Transform slotTr = zoneSlots[d][randIdx];
-        if (!slotTr) return;
-
-        if (slotTr.GetComponentInChildren<FallingPiece>() == null)
-            FreezeSlot(slotTr);
-    }
-
-    private void FreezeSlot(Transform slot)
-    {
-        if (frozenSlots.ContainsKey(slot)) return;
-
-        Vector3 baseScale = slot.localScale;
-
-        var rend = slot.GetComponent<Renderer>();
-        if (rend)
-        {
-            frozenSlots[slot] = new SlotVisualState(rend.material.color, rend.material.mainTexture);
-
-            rend.material.DOColor(iceSlotColor, 0.3f);
-            if (iceSlotTexture != null)
-                rend.material.mainTexture = iceSlotTexture;
-
-            slot.DOShakeScale(0.3f, 0.2f).OnComplete(() =>
-            {
-                if (slot) slot.localScale = baseScale;
-            });
-        }
-        else
-        {
-            frozenSlots[slot] = new SlotVisualState(Color.white, null);
-            slot.DOShakeScale(0.3f, 0.2f).OnComplete(() =>
-            {
-                if (slot) slot.localScale = baseScale;
-            });
-        }
-
-        MarkActivity();
-    }
 
 
     
-    public void UnfreezeAllSlots()
-    {
-        if (frozenSlots.Count == 0) return;
 
-        // Kopya alıp gezmek lazım, dictionary modified exception yemeyelim
-        List<Transform> allFrozen = new List<Transform>(frozenSlots.Keys);
-        foreach (var slot in allFrozen)
-        {
-            UnfreezeSlot(slot);
-        }
-    }
-
-    private void UnfreezeSlot(Transform slot)
-    {
-        if (!frozenSlots.ContainsKey(slot)) return;
-
-        var rend = slot.GetComponent<Renderer>();
-        if (rend)
-        {
-            var original = frozenSlots[slot];
-            rend.material.DOColor(original.color, 0.3f);
-            rend.material.mainTexture = original.mainTexture;
-        }
-
-        frozenSlots.Remove(slot);
-        slot.DOShakeRotation(0.2f, 15f);
-
-        MarkActivity();
-    }
 
     // ================= Shuffle =================
 
@@ -681,16 +531,7 @@ public class SlotManager : MonoBehaviour
     private int GetNonFrozenSlotCount(Direction d)
     {
         if (!zoneSlots.ContainsKey(d)) return 0;
-
-        int count = 0;
-        for (int i = 0; i < zoneSlots[d].Count; i++)
-        {
-            Transform s = zoneSlots[d][i];
-            if (!s) continue;
-            if (frozenSlots.ContainsKey(s)) continue;
-            count++;
-        }
-        return count;
+        return zoneSlots[d].Count;
     }
 
     private Quaternion GetZonePieceWorldRotation(Direction d)
@@ -827,7 +668,6 @@ public class SlotManager : MonoBehaviour
             {
                 Transform s = slots[i];
                 if (!s) continue;
-                if (frozenSlots.ContainsKey(s)) continue;
                 if (s.GetComponentInChildren<FallingPiece>() != null) continue;
                 availableSlots.Add(s);
             }
@@ -885,7 +725,6 @@ public class SlotManager : MonoBehaviour
         Debug.Log($"[SlotManager] SetupGrid called (manual slots). slotsPerZone ignored: {slotsPerZone}");
 
         foreach (var kv in grid) kv.Value.Clear();
-        UnfreezeAllSlots();
 
         CacheManualSlots();
 
@@ -920,7 +759,7 @@ public class SlotManager : MonoBehaviour
 
 
 
-        UnfreezeAllSlots();
+
         
         // ✅ Force Stop Shuffle & Pulse
         StopShuffleRoutine();
@@ -957,7 +796,7 @@ public class SlotManager : MonoBehaviour
 
     private void CheckLoseCondition(FallingPiece p)
     {
-        if (!p || p.isJoker) return; // Joker can be tapped away or used on ice
+        if (!p) return;
 
         // Check if ANY move is possible
         bool anySlotOpen = false;
@@ -966,7 +805,6 @@ public class SlotManager : MonoBehaviour
             // If direction is invalid (e.g. manual slots empty), skip
             if (!zoneSlots.ContainsKey(dir)) continue;
 
-            // Using existing logic: TryGetFirstEmptySlot checks frozen too
             if (TryGetFirstEmptySlot(dir, out _))
             {
                 anySlotOpen = true;
@@ -1000,23 +838,13 @@ public class SlotManager : MonoBehaviour
 
             centerQueue.Dequeue();
 
-            // ✅ JOKER TAP (Refactored)
-            if (hitPiece.isJoker)
-            {
-                if (JokerSpawner.Instance != null)
-                    JokerSpawner.Instance.OnJokerTapped(hitPiece);
-                else
-                    SlotManager.Instance.UnfreezeAllSlots(); // Fallback
-            }
-
             Destroy(hitPiece.gameObject);
 
             if (sp) sp.SpawnNextPiece();
             return;
         }
 
-        // Grid tap: sadece arabaları (joker değil) tıklayıp silebilirsin istersen
-        if (hitPiece.isJoker) return;
+
 
         if (!TryFindPieceInGrid(hitPiece, out Direction dir, out int index)) return;
 
@@ -1026,25 +854,7 @@ public class SlotManager : MonoBehaviour
         Destroy(hitPiece.gameObject);
     }
 
-    private bool TryGetFirstFrozenEmptySlot(Direction dir, out Transform frozenSlot)
-    {
-        frozenSlot = null;
-        if (!zoneSlots.ContainsKey(dir)) return false;
 
-        var slots = zoneSlots[dir];
-        for (int i = 0; i < slots.Count; i++)
-        {
-            Transform slot = slots[i];
-            if (!slot) continue;
-
-            if (!frozenSlots.ContainsKey(slot)) continue;
-            if (slot.GetComponentInChildren<FallingPiece>() != null) continue;
-
-            frozenSlot = slot;
-            return true;
-        }
-        return false;
-    }
 
     private bool TryGetFirstEmptySlot(Direction dir, out Transform emptySlot)
     {
@@ -1057,7 +867,6 @@ public class SlotManager : MonoBehaviour
             Transform s = slots[i];
             if (!s) continue;
 
-            if (frozenSlots.ContainsKey(s)) continue;
             if (s.GetComponentInChildren<FallingPiece>() != null) continue;
 
             emptySlot = s;
@@ -1108,42 +917,6 @@ public class SlotManager : MonoBehaviour
             return;
         }
 
-        // ✅ JOKER: bu yönde frozen varsa gidip aç (1 joker = 1 frozen)
-        if (peekPiece.isJoker)
-        {
-            if (TryGetFirstFrozenEmptySlot(dir, out Transform frozenSlot))
-            {
-                FallingPiece joker = centerQueue.Dequeue();
-
-                var sp = FindObjectOfType<Spawner>();
-                if (sp) sp.NotifyCenterCleared(joker);
-
-                Vector3 worldScaleBefore = joker.transform.lossyScale;
-                Quaternion targetRot = GetZonePieceWorldRotation(dir);
-
-                Sequence seq = DOTween.Sequence();
-                seq.Join(joker.transform.DOMove(frozenSlot.position, moveDuration).SetEase(Ease.OutQuad));
-                seq.Join(joker.transform.DORotateQuaternion(targetRot, moveDuration).SetEase(Ease.OutQuad));
-                seq.OnComplete(() =>
-                {
-                    UnfreezeSlot(frozenSlot);
-                    if (joker) Destroy(joker.gameObject);
-                });
-
-                if (sp) sp.SpawnNextPiece();
-            }
-            else
-            {
-                // buz yoksa: jokeri çöpe (tap ile de zaten gider)
-                FallingPiece joker = centerQueue.Dequeue();
-                var sp = FindObjectOfType<Spawner>();
-                if (sp) sp.NotifyCenterCleared(joker);
-                if (joker) Destroy(joker.gameObject);
-                if (sp) sp.SpawnNextPiece();
-            }
-            return;
-        }
-
         // normal araç yerleştir
         int capacity = zoneSlots[dir].Count;
         if (grid[dir].Count >= capacity)
@@ -1155,12 +928,6 @@ public class SlotManager : MonoBehaviour
         if (!TryGetFirstEmptySlot(dir, out Transform targetSlot))
         {
             if (LevelManager.Instance) LevelManager.Instance.ReduceLife();
-            return;
-        }
-
-        if (frozenSlots.ContainsKey(targetSlot))
-        {
-            // frozen'a araba atamaz (joker açar)
             return;
         }
 
@@ -1182,6 +949,19 @@ public class SlotManager : MonoBehaviour
     {
         grid[dir].Add(piece);
         CheckMatch3(dir);
+        
+        // Critical Fix: Check Lose Condition when piece lands
+        Spawner sp = FindObjectOfType<Spawner>();
+        // We only care about the NEXT piece in queue for lose condition
+        // But if Spawner has currentCenterPiece, that's the one we check?
+        // Actually, let's just check if ANY move is possible for the current center piece
+        // Since we don't have easy access to Spawner's current piece here without finding it,
+        // let's grab it from spawner or peek queue
+        if (centerQueue.Count > 0)
+        {
+            CheckLoseCondition(centerQueue.Peek());
+        }
+
         MarkActivity();
     }
 
@@ -1227,7 +1007,6 @@ public class SlotManager : MonoBehaviour
             Transform slot = slots[i];
             if (!slot) continue;
 
-            if (frozenSlots.ContainsKey(slot)) continue;
             if (write >= list.Count) break;
 
             FallingPiece p = list[write];
@@ -1251,16 +1030,12 @@ public class SlotManager : MonoBehaviour
         if (list.Count < capacity) return;
 
         // joker match'e girmez
-        for (int i = 0; i < list.Count; i++)
-            if (list[i] && list[i].isJoker) return;
-
         string targetKey = list[0] != null ? list[0].GetPieceKey() : null;
         Color targetColorFallback = list[0] != null ? list[0].GetNormalColor() : Color.white;
 
         foreach (var p in list)
         {
             if (!p) return;
-            if (p.isFrozen) return;
 
             if (!string.IsNullOrEmpty(targetKey))
             {

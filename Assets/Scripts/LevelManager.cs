@@ -109,11 +109,14 @@ public class LevelManager : MonoBehaviour
         {
             tapToStartPanel.SetActive(true);
             hasStartedGame = false;
+            SetGameplayUIActive(false); // ✅ Hide UI initially
         }
         else
         {
             hasStartedGame = true;
-            StartLevel(startLevel);
+            // Load saved level or default to startLevel
+            int savedLevel = PlayerPrefs.GetInt("KEY_LEVEL", startLevel);
+            StartLevel(savedLevel);
         }
     }
 
@@ -130,7 +133,11 @@ public class LevelManager : MonoBehaviour
             {
                 hasStartedGame = true;
                 if (tapToStartPanel) tapToStartPanel.SetActive(false);
-                StartLevel(startLevel);
+                SetGameplayUIActive(true); // ✅ Show UI on start
+                
+                // Load saved level or default to startLevel
+                int savedLevel = PlayerPrefs.GetInt("KEY_LEVEL", startLevel);
+                StartLevel(savedLevel);
             }
             return;
         }
@@ -328,7 +335,9 @@ public class LevelManager : MonoBehaviour
         int limit = Mathf.Max(1, fixedLevelSeconds);
         useTimer = false; // Global timer disabled
         timeLeft = limit;
-        currentCarTimer = carTimeLimit; // Initialize 3s timer
+        
+        carTimeLimit = cfg.carSpawnDuration; // ✅ Update dynamic timer from config
+        currentCarTimer = carTimeLimit;
 
         isRunning = true;
         if (stateText) stateText.text = "";
@@ -415,7 +424,13 @@ public class LevelManager : MonoBehaviour
         }
     }
 
-    private void NextLevel() => StartLevel(currentLevel + 1);
+    private void NextLevel()
+    {
+        int nextLv = currentLevel + 1;
+        PlayerPrefs.SetInt("KEY_LEVEL", nextLv); // ✅ Save progress
+        PlayerPrefs.Save();
+        StartLevel(nextLv);
+    }
     private void RetryLevel() => StartLevel(currentLevel);
 
     private void HandleMatch()
@@ -489,5 +504,24 @@ public class LevelManager : MonoBehaviour
         // Bilerek boş: otomatik zoom/FOV/orthoSize yok.
         // Kamera ayarları Inspector'da nasıl set ise öyle kalır.
         return;
+    }
+
+    private void SetGameplayUIActive(bool active)
+    {
+        if (levelText) levelText.gameObject.SetActive(active);
+        if (timerText) timerText.gameObject.SetActive(active);
+        if (goalText) goalText.gameObject.SetActive(active);
+        if (pauseButton) pauseButton.gameObject.SetActive(active);
+        if (restartButton) restartButton.gameObject.SetActive(active);
+        if (stateText) stateText.gameObject.SetActive(active);
+
+        // Canlar için özel durum:
+        // Oyun başladığında RefreshUI zaten doğru canları açacak.
+        // Biz sadece gizlerken hepsini kapatalım.
+        if (!active)
+        {
+            if (heartFull != null) foreach (var h in heartFull) if (h) h.gameObject.SetActive(false);
+            if (heartEmpty != null) foreach (var h in heartEmpty) if (h) h.gameObject.SetActive(false);
+        }
     }
 }

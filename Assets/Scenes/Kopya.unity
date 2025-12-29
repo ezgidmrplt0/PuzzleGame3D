@@ -2859,11 +2859,13 @@ MonoBehaviour:
   availablePieces:
   - {fileID: 7769690492283750692, guid: f40e52a0c26735a46b681671fb2baa40, type: 3}
   - {fileID: 8663673574762740106, guid: 3f83a5a9639ce0249ac0d7df9b8c40b9, type: 3}
+  - {fileID: 169714083760180159, guid: 058f01a924696d653a4be4b0fb370d04, type: 3}
+  - {fileID: 3030098954657946394, guid: b13902b21b1e010cdb91934b23015036, type: 3}
   levels:
   - targetMatches: 3
     timeLimitSeconds: 60
+    carSpawnDuration: 3
     slotsPerZone: 3
-    startFrozenCount: 0
     invertHorizontalSwipe: 1
     invertVerticalSwipe: 1
     spawns: []
@@ -2902,8 +2904,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: aeb1d1d4960cfde4983909ce8cef2cb4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  jokerPrefab: {fileID: 902004664933988168, guid: ce0ad7099b25d184394aa46259719bef, type: 3}
-  jokerChance: 0
 --- !u!1 &700963024
 GameObject:
   m_ObjectHideFlags: 0
@@ -5555,11 +5555,6 @@ MonoBehaviour:
   shuffleInterval: 10
   shuffleMoveDuration: 0.45
   shuffleEase: 4
-  enableFrozenSlots: 1
-  freezeInterval: 5
-  freezeChance: 0.4
-  iceSlotTexture: {fileID: 2800000, guid: 1e3265dabbfa84681880c251ad48fc70, type: 3}
-  iceSlotColor: {r: 0, g: 1, b: 1, a: 1}
   enableIdleWiggle: 1
   idleDelay: 6
   idleCheckInterval: 0.25
@@ -5795,7 +5790,7 @@ RectTransform:
   m_GameObject: {fileID: 1852463212}
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1.266319, y: 1.1097177, z: 1}
+  m_LocalScale: {x: 1.350337, y: 0.918713, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 760849461}

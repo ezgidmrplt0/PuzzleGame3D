@@ -65,7 +65,7 @@ Material:
     - _BumpScale: 1
     - _ColorMask: 15
     - _CoreWidth: 0.455
-    - _CornerRadius: 0.45
+    - _CornerRadius: 0
     - _Cutoff: 0.5
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
