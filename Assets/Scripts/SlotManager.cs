@@ -46,7 +46,8 @@ public class SlotManager : MonoBehaviour
 
 
     [Header("Idle Animations (Cosmetic)")]
-    [SerializeField] private bool enableIdleWiggle = true;
+    // PERFORMANCE FIX: Disabled by default for mobile
+    [SerializeField] private bool enableIdleWiggle = false; 
     [SerializeField] private float idleDelay = 6f;
     [SerializeField] private float idleCheckInterval = 0.25f;
     [SerializeField] private float slotWiggleStrength = 0.08f;
@@ -56,7 +57,8 @@ public class SlotManager : MonoBehaviour
     [SerializeField] private bool wigglePiecesToo = true;
 
     [Header("Piece Pulse (Cosmetic)")]
-    [SerializeField] private bool enablePiecePulse = true;
+    // PERFORMANCE FIX: Disabled by default for mobile
+    [SerializeField] private bool enablePiecePulse = false;
     [SerializeField] private float pulseCheckInterval = 2.0f;
     [Range(0f, 1f)]
     [SerializeField] private float pulseChanceAll = 0.6f;
@@ -684,7 +686,8 @@ public class SlotManager : MonoBehaviour
                 // ✅ scale asla oynamasın
                 Vector3 worldScaleBefore = p.transform.lossyScale;
 
-                p.transform.SetParent(targetSlot, true);
+                // FIX: Do NOT parent yet. Move in world space.
+                // p.transform.SetParent(targetSlot, true); 
 
                 Quaternion targetRot = GetZonePieceWorldRotation(d);
 
@@ -830,19 +833,7 @@ public class SlotManager : MonoBehaviour
         FallingPiece hitPiece = hit.collider.GetComponent<FallingPiece>();
         if (hitPiece == null) return;
 
-        // Center tap
-        if (centerQueue.Count > 0 && centerQueue.Peek() == hitPiece)
-        {
-            var sp = FindObjectOfType<Spawner>();
-            if (sp) sp.NotifyCenterCleared(hitPiece);
 
-            centerQueue.Dequeue();
-
-            Destroy(hitPiece.gameObject);
-
-            if (sp) sp.SpawnNextPiece();
-            return;
-        }
 
 
 

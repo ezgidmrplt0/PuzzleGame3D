@@ -74,6 +74,9 @@ public class LevelManager : MonoBehaviour
     {
         if (Instance == null) Instance = this;
         else Destroy(gameObject);
+        
+        // ✅ MOBILE PERFORMANCE FIX
+        Application.targetFrameRate = 60;
 
         Time.timeScale = 1f;
     }
